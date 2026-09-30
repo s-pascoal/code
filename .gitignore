@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+.venv/
+venv/
+.DS_Store
+.vscode/
+
+# data and large outputs (adjust to your project)
+data/
+*.csv
+*.h5
+*.npy
+*.mat
