@@ -42,7 +42,7 @@ class TrainingProtocol(TrainingProtocolBase):
         # Mandatory settings
         self.settings.next_task = "Habituation"
         self.settings.refractory_period = 240 * 60  # 4 hours between sessions
-        self.settings.minimum_duration = 5 * 60  # 5 min minimum session length
+        self.settings.minimum_duration = 10 * 60  # 10 min minimum session length
         self.settings.maximum_duration = 15 * 60  # 15 min max session length
 
         # Task-dependent settings (persist across sessions)
@@ -51,14 +51,25 @@ class TrainingProtocol(TrainingProtocolBase):
 
     def update_training_settings(self) -> None:
         if self.last_task == "Habituation":
-            self.settings.next_task = "LickTeaching"
-
-        elif self.last_task == "LickTeaching":
             df_habituation = self.df[self.df["task"] == "Habituation"]
-            n_rewards = df_habituation.iloc[-1]["trial"].iloc[-1]  # every trial ends in a reward
+            if len(df_habituation) >= 1:
+                self.settings.next_task = "LickTeaching"
+                self.settings.minimum_duration = 25 * 60 # min duration increases to 25min for lick teaching
+                self.settings.maximum_duration = 45 * 60 # max duration increases to 45min for lick teaching        
+            else:
+                self.settings.next_task = "Habituation"
 
-            if n_rewards > self.REWARDS_TO_PROGRESS:
-                self.settings.next_task = "HeadportEntryTeaching"
+                
+        elif self.last_task == "LickTeaching":
+            df_lickteaching = self.df[self.df["task"] == "LickTeaching"]
+            trials_last_session = df_lickteaching.iloc[-1]["trial"].iloc[-1]
+            outcome_correct = df_lickteaching[df_lickteaching["outcome"] == "correct"]
+
+            if (trials_last_session >= 100 and len(outcome_correct) >= 20):
+                self.settings.next_task = "HeadPortEntryTeaching"
+            else:
+                self.settings.next_task = "LickTeaching"
+
 
     def define_gui_tabs(self) -> None:
         pass
