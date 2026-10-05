@@ -1,6 +1,6 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 
-class LickTeaching(TaskBase):
+class HeadPortEntryTeaching(TaskBase):
 
     def __init__(self):
         super().__init__()

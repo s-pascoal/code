@@ -86,17 +86,18 @@ def ramp(x, ms=5):
     w[-n:] = w[:n][::-1]
     return x * w
 
-def cue_generator(side, gain_noise, gain_tone):
-    # gain_noise / gain_tone: (left, right) calibrated gains
+def side_generator(side, gain_noise):
+    # gain_noise: (left, right) calibrated gains; noise only on the cued side
     noise = ramp(whitenoise_generator(0.4, 1))
-    tone = ramp(tone_generator(0.1, 1, 3500))
     silence = np.zeros_like(noise)
-    ch = 0 if side == "left" else 1
-    side_l = gain_noise[0] * noise if ch == 0 else silence
-    side_r = gain_noise[1] * noise if ch == 1 else silence
-    left = np.concatenate([side_l, gain_tone[0] * tone])
-    right = np.concatenate([side_r, gain_tone[1] * tone])
-    return left, right
+    if side == "left":
+        return gain_noise[0] * noise, silence
+    return silence, gain_noise[1] * noise
+
+
+def cue_generator(gain_tone):
+    tone = ramp(tone_generator(0.1, 1, 3500))
+    return gain_tone[0] * tone, gain_tone[1] * tone
 
 
 sound_calibration_functions = [

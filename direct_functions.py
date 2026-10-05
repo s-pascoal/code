@@ -4,8 +4,6 @@ from village.custom_classes.direct_functions_base import DirectFunctionsBase
 
 class DirectFunctions(DirectFunctionsBase):
 
-    _cue_cache = {}
-
     def _load_cue(self, side):
         if side not in self._cue_cache:
             cal = self.task.calibrations.sound_calibration
@@ -15,35 +13,59 @@ class DirectFunctions(DirectFunctionsBase):
         left, right = self._cue_cache[side]
         sound_device.load(left=left, right=right)
 
+    # playing sound from both speakers with constant gain (not calibrated)
+    # useful to use from the GUI buttons
     def function1(self):
         """Play Manual Sound"""
         sound = whitenoise_generator(2, 0.05)
-        sound_device.load(left=sound, right=sound)
+        sound_device.load(left=sound, right= sound)
         sound_device.play()
 
+
     def function2(self):
-        """Load left cue (SIDE + GO)"""
-        self._load_cue("left")
+        """Load left sound"""
+        left_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
+            0, 70, "whitenoise") 
+        left_sound = whitenoise_generator(0.5, left_calibration)
+        sound_device.load(left=left_sound, right=None)
 
     def function3(self):
-        """Load right cue (SIDE + GO)"""
-        self._load_cue("right")
+        """Load right sound"""
+        right_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
+            1, 70, "whitenoise")
+        right_sound = whitenoise_generator(0.5, right_calibration)
+        sound_device.load(left=None, right=right_sound)
 
     def function4(self):
+        """Load cue sound"""
+        left_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
+                    0, 70, "tone_3500")
+        right_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
+                    1, 70, "tone_3500")
+        left_sound = cue_generator(left_calibration)
+        right_sound = cue_generator(right_calibration)
+        sound_device.load(left=left_sound, right=right_sound)
+
+
+    def function5(self):
         """Play loaded sound"""
         sound_device.play()
 
-    def function5(self):
+    def function6(self):
         """Stop sound"""
         sound_device.stop()
 
-    def function6(self):
-        """Retract motor"""
-        # write here the code
-
     def function7(self):
-        """Advance motor"""
-        # write here the code
+        """Retract motor3"""
+        self.task.motor_box3.close()
+
+    def function8(self):
+        """Advance motor3"""
+        self.task.motor_box3.open()
+
+    def function9(self):
+        """Move motor"""
+        self.task.motor_box3.set_position(self.task.settings.motor_position)
 
 
 
