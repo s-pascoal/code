@@ -52,23 +52,21 @@ class TrainingProtocol(TrainingProtocolBase):
     def update_training_settings(self) -> None:
         if self.last_task == "Habituation":
             df_habituation = self.df[self.df["task"] == "Habituation"]
+
             if len(df_habituation) >= 1:
                 self.settings.next_task = "LickTeaching"
-                self.settings.minimum_duration = 25 * 60 # min duration increases to 25min for lick teaching
-                self.settings.maximum_duration = 45 * 60 # max duration increases to 45min for lick teaching        
-            else:
-                self.settings.next_task = "Habituation"
+                self.settings.minimum_duration = 25 * 60  # 25 min for lick teaching
+                self.settings.maximum_duration = 45 * 60  # 45 min for lick teaching
 
-                
         elif self.last_task == "LickTeaching":
             df_lickteaching = self.df[self.df["task"] == "LickTeaching"]
-            trials_last_session = df_lickteaching.iloc[-1]["trial"].iloc[-1]
-            outcome_correct = df_lickteaching[df_lickteaching["outcome"] == "correct"]
 
-            if (trials_last_session >= 100 and len(outcome_correct) >= 20):
+            last_session = df_lickteaching.iloc[-1]
+            trials_last_session = last_session["trial"].iloc[-1]
+            correct_last_session = (last_session["outcome"] == "correct").sum()
+
+            if trials_last_session >= 100 and correct_last_session > 20:
                 self.settings.next_task = "HeadPortEntryTeaching"
-            else:
-                self.settings.next_task = "LickTeaching"
 
 
     def define_gui_tabs(self) -> None:
