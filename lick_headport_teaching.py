@@ -53,6 +53,7 @@ Softcodes (direct_functions):
         # LICK TEACHING
         # Events and outputs needed from BPod
         port_in = BpodEvent.Port1In if side == "left" else BpodEvent.Port2In
+        wrong_port_in = BpodEvent.Port2In if side == "left" else BpodEvent.Port1In
         valve = BpodOutput.Valve1 if side == "left" else BpodOutput.Valve2
         led = (BpodOutput.PWM1, 255)
 
@@ -88,13 +89,14 @@ Softcodes (direct_functions):
             state_change_conditions={BpodEvent.Tup: "choice"},
             output_actions=[play_softcode],
         )
-
+        
         self.bpod.add_state(
             state_name="choice",
             state_timer=NO_LICK_TIMEOUT,
             state_change_conditions={
-                port_in: "deliver_water",
-                BpodEvent.Tup: "no_lick_timeout",
+                port_in: "deliver_water",        # correct port: reward
+                wrong_port_in: "choice",         # wrong port: restart the 30 s clock
+                BpodEvent.Tup: "no_lick_timeout" # silence on both ports
             },
             output_actions=[led],
         )
