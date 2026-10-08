@@ -49,6 +49,9 @@ class TrainingProtocol(TrainingProtocolBase):
         self.settings.lickport_start_distance = 60.0 # open angle closest to window
         self.settings.lickport_distance = 60.0 # starts same as above, updated/session in update_training_settings
 
+        # HeadFixationTeaching (persist across sessions)
+        self.settings.fixation_duration = 1  # s; +2 per 20 time-ups, -2 per session
+
     
     def update_training_settings(self) -> None:
         if self.last_task == "Habituation":
