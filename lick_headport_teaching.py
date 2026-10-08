@@ -1,4 +1,5 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
+import math
 
 # Lickport variables
 START_ANGLE = 60.0     # open angle = closest to the headport (training start)
@@ -127,15 +128,17 @@ Softcodes (direct_functions):
         Whichever side the animal poked first (if any) after the side sound
         turned on determines the outcome
         """
-
+        play_stim_start = self.trial_data.get("STATE_play_stim_START")
+        t_play_stim = play_stim_start[0]
+        
         correct_key, wrong_key = (
             ("Port1In", "Port2In") if self.side == "left" else ("Port2In", "Port1In")
         )
         correct_licks = [
-            t for t in self.trial_data.get(correct_key, [])
+            t for t in self.trial_data.get(correct_key, []) if t >= t_play_stim
         ]
         wrong_licks = [
-            t for t in self.trial_data.get(wrong_key, [])
+            t for t in self.trial_data.get(wrong_key, []) if t >= t_play_stim
         ]
 
         # outcome stays based on the FIRST lick (this is what drives the 20-correct counter)
@@ -149,8 +152,14 @@ Softcodes (direct_functions):
             outcome = "miss"
             response_side = "none"
 
+        def visited(state):
+            # With Bpod, a state that was not visited in this trial is still in
+            # trial_data, as [nan] -- so check the time, not just the key.
+            return not math.isnan(
+                self.trial_data.get(f"STATE_{state}_START", [math.nan])[0]
+            )
         # water depends on whether the valve state was actually reached
-        rewarded = len(self.trial_data.get("STATE_deliver_water_START", [])) > 0
+        rewarded = visited("deliver_water")
         water = self.settings.water_volume if rewarded else 0
 
         self.register_value("rewarded_side", self.side)
