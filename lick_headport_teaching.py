@@ -179,14 +179,28 @@ Softcodes (direct_functions):
                 self.settings.lickport_distance = min(distance_during_trial + STEP_ANGLE, START_ANGLE)
                 self.move_motor_pending = True
             self.correct_count = 0
+
         
-        elif outcome == "correct":
+        # HERE CHOOSE WHICH CONDITION IS BEST!
+        
+        elif rewarded:            # After every rewarded trial independent of 1st licking
+            self.correct_count += 1
+            if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
+                self.settings.lickport_distance = max(distance_during_trial - STEP_ANGLE, FINAL_ANGLE)
+                self.move_motor_pending = True
+                self.correct_count = 0
+        
+        '''
+       
+        elif outcome == "correct": # After every 20 correct 1st licks 
             self.correct_count += 1
             if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
                 # 20 correct: make it harder, retract away from the window
                 self.settings.lickport_distance = max(distance_during_trial - STEP_ANGLE, FINAL_ANGLE)
                 self.move_motor_pending = True
                 self.correct_count = 0
+
+        '''
         
         self.register_value("lickport_distance", distance_during_trial)
         self.register_value("lickport_distance_next", float(self.settings.lickport_distance))
