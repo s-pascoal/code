@@ -46,8 +46,8 @@ class TrainingProtocol(TrainingProtocolBase):
         # Task-dependent settings (persist across sessions)
         self.settings.water_volume = 5
         # Initial lickport distance from headport for the first session
-        self.settings.lickport_start_distance = 0.0
-        self.settings.lickport_distance = 0.0
+        self.settings.lickport_start_distance = 60.0 # open angle closest to window
+        self.settings.lickport_distance = 60.0 # starts same as above, updated/session in update_training_settings
 
     
     def update_training_settings(self) -> None:
