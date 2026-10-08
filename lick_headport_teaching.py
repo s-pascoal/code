@@ -1,10 +1,11 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 
-
-# Motor movement variables - lickport
-step = 3.0
-max_distance = 14.0
-correct_to_step = 20
+# Lickport variables
+START_ANGLE = 60.0     # open angle = closest to the headport (training start)
+STEP_ANGLE = 5.0       # PLACEHOLDER: degrees that equal 3 mm 
+FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
+CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
+NO_LICK_TIMEOUT = 30   # after how many seconds no lick the motor retracts to previous stage
 
 
 class LickHeadportTeaching(TaskBase):
@@ -41,7 +42,7 @@ Softcodes (direct_functions):
         }
 
         self.correct_count = 0 # correct trials at current lickport distance
-        self.move_motor_pensing = False
+        self.move_motor_pending = False
 
     def create_trial(self):
         # Define the rewarded side for this trial, each 3 trials switch side. 
@@ -90,9 +91,19 @@ Softcodes (direct_functions):
 
         self.bpod.add_state(
             state_name="choice",
-            state_timer=0,
-            state_change_conditions={port_in: "deliver_water"},
+            state_timer=NO_LICK_TIMEOUT,
+            state_change_conditions={
+                port_in: "deliver_water",
+                BpodEvent.Tup: "no_lick_timeout",
+            },
             output_actions=[led],
+        )
+        
+        self.bpod.add_state(
+            state_name="no_lick_timeout",
+            state_timer=0,
+            state_change_conditions={BpodEvent.Tup: "exit"},
+            output_actions=[],
         )
 
         self.bpod.add_state(
@@ -146,18 +157,25 @@ Softcodes (direct_functions):
         self.register_value("response_side", response_side)
 
         distance_during_trial = float(self.settings.lickport_distance)
-
-        if outcome == "correct":           # first lick on the rewarded side
-            self.correct_count += 1
+        timed_out = len(self.trial_data.get("STATE_no_lick_timeout_START", [])) > 0
         
-        if self.correct_count >= correct_to_step and distance_during_trial < max_distance:
-            self.settings.lickport_distance = min(distance_during_trial + step, max_distance) # min (x, cap), can never go above cap
+        if timed_out:
+            # no lick for 30 s: make it easier, advance toward the window
+            if distance_during_trial < START_ANGLE:
+                self.settings.lickport_distance = min(distance_during_trial + STEP_ANGLE, START_ANGLE)
+                self.move_motor_pending = True
             self.correct_count = 0
-            self.move_motor_pending = True  # motor moves at the start of the next trial
         
-        self.register_value("lickport_distance", distance_during_trial) # the actual value of this trial
-        self.register_value("lickport_distance_next", float(self.settings.lickport_distance)) # next trial value
-
+        elif outcome == "correct":
+            self.correct_count += 1
+            if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
+                # 20 correct: make it harder, retract away from the window
+                self.settings.lickport_distance = max(distance_during_trial - STEP_ANGLE, FINAL_ANGLE)
+                self.move_motor_pending = True
+                self.correct_count = 0
+        
+        self.register_value("lickport_distance", distance_during_trial)
+        self.register_value("lickport_distance_next", float(self.settings.lickport_distance))
 
     def close(self):
         pass
