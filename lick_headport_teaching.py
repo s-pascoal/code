@@ -34,6 +34,9 @@ Softcodes (direct_functions):
             ),
         }
 
+        self.correct_count = 0 # correct trials at current lickport distance
+        self.move_motor_pensing = False
+
     def create_trial(self):
         # Define the rewarded side for this trial, each 3 trials switch side. 
         # Starts always Left.
@@ -54,15 +57,19 @@ Softcodes (direct_functions):
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         last_position_softcode = BpodOutput.SoftCode9 # lickport motor goes towards last position
 
+        # Motor movement variables - lickport
+        step = 3.0
+        max_distance = 14.0
+        correct_to_step = 20
 
-
-        if self.current_trial == 1:
+        if self.current_trial == 1 or self.move_motor_pending:
             self.bpod.add_state(
                 state_name="last_position_motor",
                 state_timer=1,
                 state_change_conditions={BpodEvent.Tup: "load_stim"},
                 output_actions=[last_position_softcode],
             )
+            self.move_motor_pending = False
   
 
         self.bpod.add_state(
@@ -135,18 +142,18 @@ Softcodes (direct_functions):
         self.register_value("outcome", outcome)
         self.register_value("response_side", response_side)
 
-           
-        # Filters exclusively on this session - Is there such column? And is this dataset created on the go or only after the session?
-        df_lht = self.df[self.df["task"] == "LickPortTeaching"]
-        df_lht_session = df_lht.iloc[-1]
-        correct_trials = df_lht_session[df_lht_session["outcome"] == "correct"]
-        # Uses multiples of 20 to advance lickport every 20 correct, only until reaching 15mm
-        if (len(correct_trials) % 20 == 0 and self.settings.lickport_distance >= 15):
-            # Picks last value of lickport distance from the last session and subtracts 3mm for the next session
-            previous_lickport_distance = df_lht_session["lickport_distance"] if len(df_lht_session) > 0 else 0.0
-            new_lickport_distance = previous_lickport_distance - 3.0
-            self.settings.lickport_distance = new_lickport_distance
-            self.task.motor_box3.set_position(new_lickport_distance)
+        distance_during_trial = float(self.settings.lickport_distance)
+
+        if outcome == "correct":           # first lick on the rewarded side
+            self.correct_count += 1
+        
+        if self.correct_count >= correct_to_step and distance_during_trial < max_distance:
+            self.settings.lickport_distance = min(distance_during_trial + step, max_distance) # min (x, cap), can never go above cap
+            self.correct_count = 0
+            self.move_motor_pending = True  # motor moves at the start of the next trial
+        
+        self.register_value("lickport_distance", distance_during_trial) # the actual value of this trial
+        self.register_value("lickport_distance_next", float(self.settings.lickport_distance)) # next trial value
 
 
     def close(self):
