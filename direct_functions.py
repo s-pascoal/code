@@ -75,19 +75,13 @@ class DirectFunctions(DirectFunctionsBase):
         self.task.motor_box3.open()
 
     def function9(self):
-        """Move motor to last position - updated during headport_entry_teaching stage
-            Store the last value completed by the mouse, so that it can be the start point
-            for the next session
-            
-            Q: Can I import the last value from training_protocol to here? 
-        """ 
-        self.task.motor_box3.set_position(self.task.settings.motor_position)
-
+        """Move motor to the current lickport_distance (last value from the previous session
+        at trial 1, or the newly stepped value mid-session)."""
+        self.task.motor_box3.set_position(self.task.settings.lickport_distance)
+    
     def function10(self):
-        """Move motor to initial position
-        self.task.settings.motor_position --> this should be replaced by position 0 settings
-        """ 
-        self.task.motor_box3.set_position(self.task.settings.motor_position)
+        """Move motor to the initial position."""
+        self.task.motor_box3.set_position(self.task.settings.lickport_start_distance)
 
 
 
