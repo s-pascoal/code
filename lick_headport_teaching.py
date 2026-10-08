@@ -168,7 +168,7 @@ Softcodes (direct_functions):
         self.register_value("response_side", response_side)
 
         distance_during_trial = float(self.settings.lickport_distance)
-        timed_out = len(self.trial_data.get("STATE_no_lick_timeout_START", [])) > 0
+        timed_out = visited("no_lick_timeout")
         
         if timed_out:
             # no lick for 30 s: make it easier, advance toward the window
