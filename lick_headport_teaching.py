@@ -1,4 +1,5 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
+from sound_functions import sound_device, whitenoise_generator
 import math
 
 # Lickport variables
@@ -28,7 +29,8 @@ After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
 When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage (HeadFixationTeaching).
 
 Softcodes (direct_functions):
-2 = load left cue, 3 = load right cue, 5 = play loaded cue
+5 = play loaded cue 
+- Sound load comes directly from sound_functions, calibrated in start, and loaded in every trial depending on side
 
 """
 
@@ -40,6 +42,12 @@ Softcodes (direct_functions):
             "right": self.calibrations.water_calibration.get_valve_time(
                 port=2, volume=self.settings.water_volume
             ),
+        }
+
+        cal = self.calibrations.sound_calibration
+        self.cue = {
+            "left": whitenoise_generator(0.5, cal.get_sound_gain(0, 70, "whitenoise")),
+            "right": whitenoise_generator(0.5, cal.get_sound_gain(1, 70, "whitenoise")),
         }
 
         self.correct_count = 0 # correct trials at current lickport distance
@@ -59,10 +67,13 @@ Softcodes (direct_functions):
         led = (BpodOutput.PWM1, 255)
 
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
-        load_softcode = BpodOutput.SoftCode2 if side == "left" else BpodOutput.SoftCode3
         play_softcode = BpodOutput.SoftCode5
+        if side == "left":
+            sound_device.load(left=self.cue["left"], right=None)
+        else:
+            sound_device.load(left=None, right=self.cue["right"])
         
-        # HEADPORT ENTRY TEACHING 
+                # HEADPORT ENTRY TEACHING 
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         last_position_softcode = BpodOutput.SoftCode9 # lickport motor goes towards last position
     
@@ -71,18 +82,10 @@ Softcodes (direct_functions):
             self.bpod.add_state(
                 state_name="last_position_motor",
                 state_timer=1,
-                state_change_conditions={BpodEvent.Tup: "load_stim"},
+                state_change_conditions={BpodEvent.Tup: "play_stim"},
                 output_actions=[last_position_softcode],
             )
             self.move_motor_pending = False
-  
-
-        self.bpod.add_state(
-            state_name="load_stim",
-            state_timer=0,
-            state_change_conditions={BpodEvent.Tup: "play_stim"},
-            output_actions=[load_softcode],
-        )
 
         self.bpod.add_state(
             state_name="play_stim",
