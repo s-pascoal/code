@@ -4,6 +4,7 @@ from village.custom_classes.direct_functions_base import DirectFunctionsBase
 
 class DirectFunctions(DirectFunctionsBase):
 
+    #   These are sound-related functions that can be called from the Bpod via softcodes.
     def _load_cue(self, side):
         if side not in self._cue_cache:
             cal = self.task.calibrations.sound_calibration
@@ -55,6 +56,16 @@ class DirectFunctions(DirectFunctionsBase):
         """Stop sound"""
         sound_device.stop()
 
+    """
+    These are functions to control servo motors for the lickport. 
+    The functions are called from the Bpod via softcodes.
+    
+    Questions:
+    1) difference between self.task.settings and self.settings?
+    2) self.task.settings.motor_position --> how do I define position 0 here?
+    3) self.settings.motor_position --> will this pick on the last value of the motor?
+    """
+
     def function7(self):
         """Retract motor3"""
         self.task.motor_box3.close()
@@ -64,9 +75,19 @@ class DirectFunctions(DirectFunctionsBase):
         self.task.motor_box3.open()
 
     def function9(self):
-        """Move motor"""
+        """Move motor to last position - updated during headport_entry_teaching stage
+            Store the last value completed by the mouse, so that it can be the start point
+            for the next session
+            
+            Q: Can I import the last value from training_protocol to here? 
+        """ 
         self.task.motor_box3.set_position(self.task.settings.motor_position)
 
+    def function10(self):
+        """Move motor to initial position
+        self.task.settings.motor_position --> this should be replaced by position 0 settings
+        """ 
+        self.task.motor_box3.set_position(self.task.settings.motor_position)
 
 
 

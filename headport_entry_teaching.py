@@ -6,9 +6,9 @@ class HeadPortEntryTeaching(TaskBase):
         super().__init__()
 
         self.info = """
-Lick Teaching Task
+Headport Entry Teaching
 ----------------------------------------------------------------
-Description
+Description<<
 """
 
     def start(self):

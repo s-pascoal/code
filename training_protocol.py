@@ -33,8 +33,6 @@ class TrainingProtocol(TrainingProtocolBase):
     following the logic in the update method."""
 
 
-    REWARDS_TO_PROGRESS = 20  # rewarded trials within a single session
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -47,26 +45,36 @@ class TrainingProtocol(TrainingProtocolBase):
 
         # Task-dependent settings (persist across sessions)
         self.settings.water_volume = 5
-        self.settings.lickport_distance = 0
+        # Initial lickport distance from headport for the first session
+        self.settings.lickport_distance = self.task.motor_box3.set_position(self.task.settings.motor_position)
+        
 
     def update_training_settings(self) -> None:
         if self.last_task == "Habituation":
             df_habituation = self.df[self.df["task"] == "Habituation"]
 
             if len(df_habituation) >= 1:
-                self.settings.next_task = "LickTeaching"
+                self.settings.next_task = "LickHeadportTeaching"
                 self.settings.minimum_duration = 25 * 60  # 25 min for lick teaching
                 self.settings.maximum_duration = 45 * 60  # 45 min for lick teaching
 
-        elif self.last_task == "LickTeaching":
-            df_lickteaching = self.df[self.df["task"] == "LickTeaching"]
+        elif self.last_task == "LickHeadportTeaching":
+            # Picks last value of lickport distance from the last session and subtracts 3mm for the next session
+            df_lickheadportteaching = self.df[self.df["task"] == "LickHeadportTeaching"]
+            previous_lickport_distance = df_lickheadportteaching.iloc[-1]["lickport_distance"] if len(df_lickheadportteaching) > 0 else 0.0
+            # Below it might not be 3 - not sure what the units are
+            self.settings.lickport_distance = max(previous_lickport_distance - 3.0, 0.0)
+            
+            self.settings.next_task = "LickHeadportTeaching"
+            self.settings.minimum_duration = 25 * 60  # 25 min for lick teaching
+            self.settings.maximum_duration = 45 * 60  # 45 min for lick teaching
 
-            last_session = df_lickteaching.iloc[-1]
-            trials_last_session = last_session["trial"].iloc[-1]
-            correct_last_session = (last_session["outcome"] == "correct").sum()
+        elif self.last_task == "LickHeadportTeaching":
+            # Picks last value of lickport distance from the last session and subtracts 3mm for the next session
+            df_lickheadportteaching = self.df[self.df["task"] == "LickHeadportTeaching"]
 
-            if trials_last_session >= 100 and correct_last_session > 20:
-                self.settings.next_task = "HeadPortEntryTeaching"
+            # Insert a condition for >30 switches & 15mm lickport distance to move to fixation
+
 
 
     def define_gui_tabs(self) -> None:

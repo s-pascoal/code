@@ -1,23 +1,27 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 
 
-class LickTeaching(TaskBase):
+class LickHeadportTeaching(TaskBase):
 
     def __init__(self):
         super().__init__()
 
         self.info = """
-Lick Teaching Task
+Lick and Headport Teaching Task
 ----------------------------------------------------------------
 The lickport is at the closest position to the headport, no head fixation.
 Left and right ports alternate in blocks of 3 trials. Each trial starts with a
 side cue (broadband noise, 400 ms, from the rewarded side) followed by a GO cue
 (LED). Mice must lick the rewarded port to get water.
 Wrong licks are ignored (correction is okay, no punishment).
-The stage ends after 20 rewarded trials -> HeadportEntryTeaching.
+
+After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
+
+When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage (HeadFixationTeaching).
 
 Softcodes (direct_functions):
 2 = load left cue, 3 = load right cue, 5 = play loaded cue
+
 """
 
     def start(self):
@@ -31,25 +35,35 @@ Softcodes (direct_functions):
         }
 
     def create_trial(self):
+        # Define the rewarded side for this trial, each 3 trials switch side. 
+        # Starts always Left.
         side = "left" if ((self.current_trial - 1) // 3) % 2 == 0 else "right"
         self.side = side
 
+        # LICK TEACHING
+        # Events and outputs needed from BPod
         port_in = BpodEvent.Port1In if side == "left" else BpodEvent.Port2In
         valve = BpodOutput.Valve1 if side == "left" else BpodOutput.Valve2
         led = (BpodOutput.PWM1, 255)
+
+        # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         load_softcode = BpodOutput.SoftCode2 if side == "left" else BpodOutput.SoftCode3
         play_softcode = BpodOutput.SoftCode5
-        advance_softcode = BpodOutput.SoftCode8 # lickport motor advance towards headport
+        
+        # HEADPORT ENTRY TEACHING 
+        # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
+        last_position_softcode = BpodOutput.SoftCode9 # lickport motor goes towards last position
+
 
 
         if self.current_trial == 1:
             self.bpod.add_state(
-                state_name="advance_motor",
+                state_name="last_position_motor",
                 state_timer=1,
                 state_change_conditions={BpodEvent.Tup: "load_stim"},
-                output_actions=[advance_softcode],
+                output_actions=[last_position_softcode],
             )
-
+  
 
         self.bpod.add_state(
             state_name="load_stim",
@@ -92,18 +106,6 @@ Softcodes (direct_functions):
         turned on determines the outcome
         """
 
-        # I dont think this applies to lick teaching, but I will leave it here for now
-        # side_led_on_start = self.trial_data.get("STATE_side_led_on_START")
-        # if not side_led_on_start:
-        #     # The center poke never happened -> side LED never turned on.
-        #     self.register_value("rewarded_side", self.side)
-        #     self.register_value("water", 0)
-        #     self.register_value("outcome", "omission")
-        #     self.register_value("response_side", "none")
-        #     return
-
-        # t_side_led_on = side_led_on_start[0]
-
         correct_key, wrong_key = (
             ("Port1In", "Port2In") if self.side == "left" else ("Port2In", "Port1In")
         )
@@ -133,8 +135,19 @@ Softcodes (direct_functions):
         self.register_value("outcome", outcome)
         self.register_value("response_side", response_side)
 
-    def close(self):
-        pass
+           
+        # Filters exclusively on this session - Is there such column? And is this dataset created on the go or only after the session?
+        df_lht = self.df[self.df["task"] == "LickPortTeaching"]
+        df_lht_session = df_lht.iloc[-1]
+        correct_trials = df_lht_session[df_lht_session["outcome"] == "correct"]
+        # Uses multiples of 20 to advance lickport every 20 correct, only until reaching 15mm
+        if (len(correct_trials) % 20 == 0 and self.settings.lickport_distance >= 15):
+            # Picks last value of lickport distance from the last session and subtracts 3mm for the next session
+            previous_lickport_distance = df_lht_session["lickport_distance"] if len(df_lht_session) > 0 else 0.0
+            new_lickport_distance = previous_lickport_distance - 3.0
+            self.settings.lickport_distance = new_lickport_distance
+            self.task.motor_box3.set_position(new_lickport_distance)
+
 
     def close(self):
         pass
