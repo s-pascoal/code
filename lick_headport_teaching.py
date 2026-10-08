@@ -1,6 +1,12 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 
 
+# Motor movement variables - lickport
+step = 3.0
+max_distance = 14.0
+correct_to_step = 20
+
+
 class LickHeadportTeaching(TaskBase):
 
     def __init__(self):
@@ -56,11 +62,7 @@ Softcodes (direct_functions):
         # HEADPORT ENTRY TEACHING 
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         last_position_softcode = BpodOutput.SoftCode9 # lickport motor goes towards last position
-
-        # Motor movement variables - lickport
-        step = 3.0
-        max_distance = 14.0
-        correct_to_step = 20
+    
 
         if self.current_trial == 1 or self.move_motor_pending:
             self.bpod.add_state(
@@ -123,19 +125,20 @@ Softcodes (direct_functions):
             t for t in self.trial_data.get(wrong_key, [])
         ]
 
+        # outcome stays based on the FIRST lick (this is what drives the 20-correct counter)
         if correct_licks and (not wrong_licks or correct_licks[0] <= wrong_licks[0]):
             outcome = "correct"
             response_side = self.side
-            water = self.settings.water_volume
         elif wrong_licks:
             outcome = "incorrect"
             response_side = "right" if self.side == "left" else "left"
-            water = 0
-        
         else:
-            outcome = "miss" # here miss would only be possible 1 time (if the animal never licked at all)
+            outcome = "miss"
             response_side = "none"
-            water = 0
+
+        # water depends on whether the valve state was actually reached
+        rewarded = len(self.trial_data.get("STATE_deliver_water_START", [])) > 0
+        water = self.settings.water_volume if rewarded else 0
 
         self.register_value("rewarded_side", self.side)
         self.register_value("water", water)
