@@ -1,5 +1,6 @@
 from sound_functions import sound_device, whitenoise_generator, cue_generator
 from village.custom_classes.direct_functions_base import DirectFunctionsBase
+from village.devices.chip import motor_box1
 
 
 class DirectFunctions(DirectFunctionsBase):
@@ -82,6 +83,19 @@ class DirectFunctions(DirectFunctionsBase):
     def function10(self):
         """Move motor to the initial position."""
         self.task.motor_box3.set_position(self.task.settings.lickport_start_distance)
+
+    # Head clamp: motor 1 of the box drives the pistons that fix the head.
+    # Called from HeadFixationTeaching via softcodes 11 (fix) and 12 (release).
+    # Angles and travel times are calibrated in MONITOR -> BOX -> MOTOR1 VALUES.
+
+    def function11(self):
+        """Close head clamp"""
+        # hold=True: keep holding torque so the mouse can't push the clamp open
+        motor_box1.close(hold=True)
+
+    def function12(self):
+        """Open head clamp"""
+        motor_box1.open()
 
 
 

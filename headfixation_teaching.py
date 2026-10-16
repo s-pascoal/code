@@ -3,6 +3,7 @@ import math
 from sound_functions import whitenoise_generator
 
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase, TaskError
+from village.devices.chip import motor_box1
 from village.devices.sound_device import sound_device
 from village.scripts.time_utils import time_utils
 
@@ -24,8 +25,8 @@ STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # BLANK: no detector sends this yet
 
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
-CLAMP_CLOSE_SOFTCODE = BpodOutput.SoftCode11  # BLANK: function11 not written yet
-CLAMP_OPEN_SOFTCODE = BpodOutput.SoftCode12  # BLANK: function12 not written yet
+CLAMP_CLOSE_SOFTCODE = BpodOutput.SoftCode11  # function11: close head clamp
+CLAMP_OPEN_SOFTCODE = BpodOutput.SoftCode12  # function12: open head clamp
 
 # GO cue
 GO_LED = None  # BLANK: which LED is GO, e.g. (BpodOutput.PWM1, 255)?
@@ -193,8 +194,7 @@ class HeadFixationTeaching(TaskBase):
                 output_actions=[],
             )
 
-            # Close the clamp and wait for it to finish closing. The fixation
-            # time only starts after this (GlobalTimer1Trig is in play_stim).
+            # Close the clamp
             self.bpod.add_state(
                 state_name="fix",
                 state_timer=CLAMP_TRAVEL_TIME,
@@ -202,6 +202,7 @@ class HeadFixationTeaching(TaskBase):
                 output_actions=[CLAMP_CLOSE_SOFTCODE],
             )
 
+        # Start global time, play the side cue. 
         self.bpod.add_state(
             state_name="play_stim",
             state_timer=SIDE_SOUND_DURATION,
@@ -292,26 +293,12 @@ class HeadFixationTeaching(TaskBase):
         self.register_value("number_of_switches", self.number_of_switches)
 
     def close(self):
-        # BLANK: always open the clamp at the end, even if the session is cut off
-        # mid-fixation. Needs the clamp motor, e.g.
-        # from village.devices.chip import motor_box4  (which motor index?)
-        # motor_box4.open()
-        pass
+        # Always open the clamp at the end, even if the session was cut off
+        # mid-fixation (no release state ran).
+        motor_box1.open()
 
 
-# To add to direct_functions.py once the clamp motor is known (BLANK):
-#
-# from village.devices.chip import motor_box4  # BLANK: clamp motor index
-#
-#     def function11(self):
-#         """Close head clamp"""
-#         motor_box4.close(hold=True)
-#
-#     def function12(self):
-#         """Open head clamp"""
-#         motor_box4.open()
-#
-# And in training_protocol.py:
+# Still to add in training_protocol.py:
 # - update_training_settings: LickHeadportTeaching -> HeadFixationTeaching
 #   (lickport at FINAL_ANGLE and >30 switches), and HeadFixationTeaching ->
 #   BLANK task name when fixation_duration > FINAL_FIXATION.
