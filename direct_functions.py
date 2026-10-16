@@ -1,6 +1,6 @@
 from sound_functions import sound_device, whitenoise_generator, cue_generator
 from village.custom_classes.direct_functions_base import DirectFunctionsBase
-from village.devices.chip import motor_box1
+from village.devices.chip import motor_box1, motor_box3
 
 
 class DirectFunctions(DirectFunctionsBase):
@@ -69,20 +69,20 @@ class DirectFunctions(DirectFunctionsBase):
 
     def function7(self):
         """Retract motor3"""
-        self.task.motor_box3.close()
+        motor_box3.close()
 
     def function8(self):
         """Advance motor3"""
-        self.task.motor_box3.open()
+        motor_box3.open()
 
     def function9(self):
         """Move motor to the current lickport_distance (last value from the previous session
         at trial 1, or the newly stepped value mid-session)."""
-        self.task.motor_box3.set_position(self.task.settings.lickport_distance)
-    
+        motor_box3.move(int(self.task.settings.lickport_distance))
+
     def function10(self):
         """Move motor to the initial position."""
-        self.task.motor_box3.set_position(self.task.settings.lickport_start_distance)
+        motor_box3.move(int(self.task.settings.lickport_start_distance))
 
     # Head clamp: motor 1 of the box drives the pistons that fix the head.
     # Called from HeadFixationTeaching via softcodes 11 (fix) and 12 (release).

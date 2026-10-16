@@ -9,6 +9,9 @@ FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
 NO_LICK_TIMEOUT = 30   # after how many seconds no lick the motor retracts to previous stage
 
+# GO cue: the LEDs of both lick ports, so it gives no side information
+GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
+
 
 class LickHeadportTeaching(TaskBase):
 
@@ -52,6 +55,7 @@ Softcodes (direct_functions):
 
         self.correct_count = 0 # correct trials at current lickport distance
         self.move_motor_pending = False
+        self.number_of_switches = 0  # incremented by gpio_trigger.py
 
     def create_trial(self):
         # Define the rewarded side for this trial, each 3 trials switch side. 
@@ -64,7 +68,6 @@ Softcodes (direct_functions):
         port_in = BpodEvent.Port1In if side == "left" else BpodEvent.Port2In
         wrong_port_in = BpodEvent.Port2In if side == "left" else BpodEvent.Port1In
         valve = BpodOutput.Valve1 if side == "left" else BpodOutput.Valve2
-        led = (BpodOutput.PWM1, 255)
 
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         play_softcode = BpodOutput.SoftCode5
@@ -99,10 +102,22 @@ Softcodes (direct_functions):
             state_timer=NO_LICK_TIMEOUT,
             state_change_conditions={
                 port_in: "deliver_water",        # correct port: reward
-                wrong_port_in: "choice",         # wrong port: restart the 30 s clock
+                wrong_port_in: "wrong_lick",     # wrong port: restart the 30 s clock
                 BpodEvent.Tup: "no_lick_timeout" # silence on both ports
             },
-            output_actions=[led],
+            output_actions=GO_LEDS,
+        )
+
+        # Leave choice and come straight back, so choice starts a new 30 s timer
+        # (a real state change, instead of a transition from choice to itself)
+        self.bpod.add_state(
+            state_name="wrong_lick",
+            state_timer=0.001,
+            state_change_conditions={
+                BpodEvent.Tup: "choice",
+                port_in: "deliver_water",
+            },
+            output_actions=GO_LEDS,
         )
         
         self.bpod.add_state(
@@ -204,6 +219,7 @@ Softcodes (direct_functions):
         
         self.register_value("lickport_distance", distance_during_trial)
         self.register_value("lickport_distance_next", float(self.settings.lickport_distance))
+        self.register_value("number_of_switches", self.number_of_switches)
 
     def close(self):
         pass
