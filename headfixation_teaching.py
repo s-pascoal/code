@@ -28,8 +28,8 @@ PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
 CLAMP_CLOSE_SOFTCODE = BpodOutput.SoftCode11  # function11: close head clamp
 CLAMP_OPEN_SOFTCODE = BpodOutput.SoftCode12  # function12: open head clamp
 
-# GO cue
-GO_LED = None  # BLANK: which LED is GO, e.g. (BpodOutput.PWM1, 255)?
+# GO cue: the LEDs of both lick ports, so it gives no side information
+GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 
 class HeadFixationTeaching(TaskBase):
@@ -95,7 +95,6 @@ class HeadFixationTeaching(TaskBase):
 
         blanks = {
             "CLAMP_TRAVEL_TIME": CLAMP_TRAVEL_TIME,
-            "GO_LED": GO_LED,
         }
         missing = [name for name, value in blanks.items() if value is None]
         if missing:
@@ -216,7 +215,7 @@ class HeadFixationTeaching(TaskBase):
             state_name="choice",
             state_timer=0,
             state_change_conditions={port_in: "water", **release},
-            output_actions=[GO_LED],
+            output_actions=GO_LEDS,
         )
 
         # Still fixed after the water: the trial ends here and the next one
