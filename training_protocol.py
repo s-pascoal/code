@@ -1,5 +1,4 @@
 from village.custom_classes.training_protocol_base import TrainingProtocolBase
-import numpy as np
 
 class TrainingProtocol(TrainingProtocolBase):
     """
@@ -7,12 +6,12 @@ class TrainingProtocol(TrainingProtocolBase):
     This is, how variables change depending on different conditions (e.g. performance),
     and/or which tasks are going to be run.
 
-    In this class 2 methods need to be implemented:
+    In this class 3 methods need to be implemented:
     - __init__
     - default_training_settings
     - update_training_settings
 
-    In default_training_settings all the variables that can modify the state of 
+    In default_training_settings all the variables that can modify the state of
     the training protocol must be defined.
     In update_training_settings the variables are updated depeding on the
     performance of the animal.
@@ -24,7 +23,7 @@ class TrainingProtocol(TrainingProtocolBase):
         - refractory_period (int): Seconds the subject must wait between sessions.
         - minimum_duration (int): Seconds before door 2 opens (subject may leave).
         - maximum_duration (int): Seconds before the task stops automatically.
-    
+
     In addition to these variables, all the necessary variables to modify the state
     of the tasks can be included.
 
@@ -52,7 +51,6 @@ class TrainingProtocol(TrainingProtocolBase):
         # HeadFixationTeaching (persist across sessions)
         self.settings.fixation_duration = 1  # s; +2 per 20 time-ups, -2 per session
 
-    
     def update_training_settings(self) -> None:
         if self.last_task == "Habituation":
             df_habituation = self.df[self.df["task"] == "Habituation"]
@@ -68,17 +66,15 @@ class TrainingProtocol(TrainingProtocolBase):
                 last = df_lht["lickport_distance_next"].dropna()
                 if len(last) > 0:
                     self.settings.lickport_distance = float(last.iloc[-1])
-    
+
             self.settings.next_task = "LickHeadportTeaching"
             self.settings.minimum_duration = 25 * 60
             self.settings.maximum_duration = 45 * 60
 
-        
+
         # TODO: once lickport_distance >= 14 and >30 switch triggers,
         # self.settings.next_task = "HeadFixationTeaching"
 
-        
+
     def define_gui_tabs(self) -> None:
         pass
-
-    

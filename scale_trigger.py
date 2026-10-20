@@ -15,15 +15,25 @@ class ScaleTrigger(ScaleTriggerBase):
         - self.task.bpod         — Bpod controller (send_softcode_to_bpod, …)
         - self.task.gpio         — set_on()/set_off() for the output pin
         - any attribute defined in the task class
+
+        Every task defines scale_weight, state_weight, weight_log and state_log
+        in its start().
         """
-        pass
-        # if weight > 30:
-        #     self.task.register_raspberry_event("Heavy", timestamp)
-        #     self.task.cam_box.write_text("Heavy")
-        #     self.task.bpod.send_softcode_to_bpod(2)
-        # elif weight < 5:
-        #     self.task.register_raspberry_event("Jumping", timestamp)
-        #     self.task.cam_box.write_text("Jumping")
-        # else:
-        #     self.task.cam_box.write_text("")
-            
+        self.task.scale_weight = weight
+        self.task.weight_log.append((timestamp, weight))
+
+        if weight > 30 and self.task.state_weight != "Heavy":
+            self.task.state_weight = "Heavy"
+            self.task.register_raspberry_event("Heavy", timestamp)
+            self.task.state_log.append((timestamp, "Heavy"))
+            self.task.bpod.send_softcode_to_bpod(2)
+        elif weight < 5 and self.task.state_weight != "Jumping":
+            self.task.state_weight = "Jumping"
+            self.task.register_raspberry_event("Jumping", timestamp)
+            self.task.state_log.append((timestamp, "Jumping"))
+            self.task.bpod.send_softcode_to_bpod(3)
+        elif 5 <= weight <= 30 and self.task.state_weight != "Normal":
+            self.task.state_weight = "Normal"
+            self.task.register_raspberry_event("Normal", timestamp)
+            self.task.state_log.append((timestamp, "Normal"))
+            self.task.bpod.send_softcode_to_bpod(4)

@@ -21,7 +21,7 @@ TRIALS_PER_SIDE = 3  # trials before switching side (as in LickHeadportTeaching)
 
 # Softcodes, Raspberry Pi -> Bpod (events the state machine listens to)
 HEAD_ENTRY_SOFTCODE = BpodEvent.SoftCode1  # sent by gpio_trigger.py (headport switch)
-STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # BLANK: no detector sends this yet
+STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # sent by scale_trigger.py ("Heavy")
 
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
@@ -138,7 +138,16 @@ class HeadFixationTeaching(TaskBase):
         self.fixed = False  # True while the clamp is closed (across trials)
         self.fixation_start = 0.0  # Raspberry time the clamp closed
         self.time_up_count = 0  # time-up releases since the last +2 s step
-        self.number_of_switches = 0  # incremented by gpio_trigger.py
+
+        # Used by gpio_trigger.py, scale_trigger.py and online_plot.py
+        self.start_timestamp = time_utils.now_timestamp()
+        self.number_of_switches = 0
+        self.switch_on = False
+        self.state_weight = "Normal"
+        self.scale_weight = 0.0
+        self.switch_log = []  # (timestamp, "on" / "off")
+        self.weight_log = []  # (timestamp, weight in g)
+        self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
     def create_trial(self):
         # Rewarded side starts always left, switches every 3 trials
