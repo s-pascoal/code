@@ -10,6 +10,7 @@ from village.scripts.time_utils import time_utils
 # power the magnet lets go and the animal is free.
 CLAMP_TRAVEL_TIME = None  # BLANK: seconds the pistons need to go down/up
 RELEASE_OUTPUT = None  # BLANK: Bpod output that cuts the magnet?
+# BLANK: what happens if the Bpod stops mid-fixation?
 
 # Fixation duration
 START_FIXATION = 1  # first fixation duration (same as default_training_settings)
