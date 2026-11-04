@@ -45,7 +45,6 @@ def whitenoise_generator(
 
     samplerate = sound_device.samplerate
 
-    time = np.linspace(0, duration, int(samplerate * duration))
     # Generate noise
     noise = gain * np.random.uniform(-1, 1, int(samplerate * duration))
     return noise
@@ -86,15 +85,6 @@ def ramp(x, ms=5):
     w[-n:] = w[:n][::-1]
     return x * w
 
-def side_generator(side, gain_noise):
-    # gain_noise: (left, right) calibrated gains; noise only on the cued side
-    noise = ramp(whitenoise_generator(0.4, 1))
-    silence = np.zeros_like(noise)
-    if side == "left":
-        return gain_noise[0] * noise, silence
-    return silence, gain_noise[1] * noise
-
-
 def cue_generator(gain_tone):
     tone = ramp(tone_generator(0.1, 1, 3500))
     return gain_tone[0] * tone, gain_tone[1] * tone
@@ -109,24 +99,3 @@ sound_calibration_functions = [
     tone_10000,
     tone_20000,
 ]
-
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
-
-
-

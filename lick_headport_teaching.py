@@ -1,13 +1,17 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
+from village.scripts.time_utils import time_utils
 from sound_functions import sound_device, whitenoise_generator
 import math
 
 # Lickport variables
-START_ANGLE = 60.0     # open angle = closest to the headport (training start)
-STEP_ANGLE = 5.0       # PLACEHOLDER: degrees that equal 3 mm 
+START_ANGLE = 200.0    # motor 1 angle closest to the headport; BLANK: confirm
+STEP_ANGLE = 5.0       # PLACEHOLDER: degrees that equal 3 mm
 FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
 NO_LICK_TIMEOUT = 30   # after how many seconds no lick the motor retracts to previous stage
+
+# GO cue: the LEDs of both lick ports, so it gives no side information
+GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 
 class LickHeadportTeaching(TaskBase):
@@ -22,14 +26,15 @@ The lickport is at the closest position to the headport, no head fixation.
 Left and right ports alternate in blocks of 3 trials. Each trial starts with a
 side cue (broadband noise, 400 ms, from the rewarded side) followed by a GO cue
 (LED). Mice must lick the rewarded port to get water.
-Wrong licks are ignored (correction is okay, no punishment).
+Wrong licks are ignored (correction is okay, no punishment), but they restart
+the 30 s no-lick timeout.
 
 After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
 
 When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage (HeadFixationTeaching).
 
 Softcodes (direct_functions):
-5 = play loaded cue 
+5 = play loaded cue
 - Sound load comes directly from sound_functions, calibrated in start, and loaded in every trial depending on side
 
 """
@@ -45,6 +50,7 @@ Softcodes (direct_functions):
         }
 
         cal = self.calibrations.sound_calibration
+        # BLANK: 0.4 s? 72 dB?
         self.cue = {
             "left": whitenoise_generator(0.5, cal.get_sound_gain(0, 70, "whitenoise")),
             "right": whitenoise_generator(0.5, cal.get_sound_gain(1, 70, "whitenoise")),
@@ -52,9 +58,18 @@ Softcodes (direct_functions):
 
         self.correct_count = 0 # correct trials at current lickport distance
         self.move_motor_pending = False
+        # Used by gpio_trigger.py, scale_trigger.py and online_plot.py
+        self.start_timestamp = time_utils.now_timestamp()
+        self.number_of_switches = 0
+        self.switch_on = False
+        self.state_weight = "Normal"
+        self.scale_weight = 0.0
+        self.switch_log = []  # (timestamp, "on" / "off")
+        self.weight_log = []  # (timestamp, weight in g)
+        self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
     def create_trial(self):
-        # Define the rewarded side for this trial, each 3 trials switch side. 
+        # Define the rewarded side for this trial, each 3 trials switch side.
         # Starts always Left.
         side = "left" if ((self.current_trial - 1) // 3) % 2 == 0 else "right"
         self.side = side
@@ -64,7 +79,6 @@ Softcodes (direct_functions):
         port_in = BpodEvent.Port1In if side == "left" else BpodEvent.Port2In
         wrong_port_in = BpodEvent.Port2In if side == "left" else BpodEvent.Port1In
         valve = BpodOutput.Valve1 if side == "left" else BpodOutput.Valve2
-        led = (BpodOutput.PWM1, 255)
 
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         play_softcode = BpodOutput.SoftCode5
@@ -72,11 +86,11 @@ Softcodes (direct_functions):
             sound_device.load(left=self.cue["left"], right=None)
         else:
             sound_device.load(left=None, right=self.cue["right"])
-        
-                # HEADPORT ENTRY TEACHING 
+
+                # HEADPORT ENTRY TEACHING
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
         last_position_softcode = BpodOutput.SoftCode9 # lickport motor goes towards last position
-    
+
 
         if self.current_trial == 1 or self.move_motor_pending:
             self.bpod.add_state(
@@ -93,18 +107,28 @@ Softcodes (direct_functions):
             state_change_conditions={BpodEvent.Tup: "choice"},
             output_actions=[play_softcode],
         )
-        
+
         self.bpod.add_state(
             state_name="choice",
             state_timer=NO_LICK_TIMEOUT,
             state_change_conditions={
                 port_in: "deliver_water",        # correct port: reward
-                wrong_port_in: "choice",         # wrong port: restart the 30 s clock
+                wrong_port_in: "wrong_lick",     # wrong port: restart the 30 s clock
                 BpodEvent.Tup: "no_lick_timeout" # silence on both ports
             },
-            output_actions=[led],
+            output_actions=GO_LEDS,
         )
-        
+
+        # A state pointing to itself does not restart its timer in Bpod (it is
+        # not a transition), so the wrong lick goes through this 0 s state and
+        # back to "choice", which is entered again with a new 30 s timer.
+        self.bpod.add_state(
+            state_name="wrong_lick",
+            state_timer=0,
+            state_change_conditions={BpodEvent.Tup: "choice"},
+            output_actions=GO_LEDS,
+        )
+
         self.bpod.add_state(
             state_name="no_lick_timeout",
             state_timer=0,
@@ -133,7 +157,7 @@ Softcodes (direct_functions):
         """
         play_stim_start = self.trial_data.get("STATE_play_stim_START")
         t_play_stim = play_stim_start[0]
-        
+
         correct_key, wrong_key = (
             ("Port1In", "Port2In") if self.side == "left" else ("Port2In", "Port1In")
         )
@@ -172,7 +196,7 @@ Softcodes (direct_functions):
 
         distance_during_trial = float(self.settings.lickport_distance)
         timed_out = visited("no_lick_timeout")
-        
+
         if timed_out:
             # no lick for 30 s: make it easier, advance toward the window
             if distance_during_trial < START_ANGLE:
@@ -180,19 +204,19 @@ Softcodes (direct_functions):
                 self.move_motor_pending = True
             self.correct_count = 0
 
-        
+
         # HERE CHOOSE WHICH CONDITION IS BEST!
-        
+
         elif rewarded:            # After every rewarded trial independent of 1st licking
             self.correct_count += 1
             if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
                 self.settings.lickport_distance = max(distance_during_trial - STEP_ANGLE, FINAL_ANGLE)
                 self.move_motor_pending = True
                 self.correct_count = 0
-        
+
         '''
-       
-        elif outcome == "correct": # After every 20 correct 1st licks 
+
+        elif outcome == "correct": # After every 20 correct 1st licks
             self.correct_count += 1
             if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
                 # 20 correct: make it harder, retract away from the window
@@ -201,9 +225,10 @@ Softcodes (direct_functions):
                 self.correct_count = 0
 
         '''
-        
+
         self.register_value("lickport_distance", distance_during_trial)
         self.register_value("lickport_distance_next", float(self.settings.lickport_distance))
+        self.register_value("number_of_switches", self.number_of_switches)
 
     def close(self):
         pass

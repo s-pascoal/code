@@ -1,53 +1,48 @@
-from sound_functions import sound_device, whitenoise_generator, cue_generator
+from sound_functions import cue_generator, sound_device, whitenoise_generator
+
 from village.custom_classes.direct_functions_base import DirectFunctionsBase
 from village.devices.chip import motor_box1
 
 
 class DirectFunctions(DirectFunctionsBase):
 
-    #   These are sound-related functions that can be called from the Bpod via softcodes.
-    def _load_cue(self, side):
-        if side not in self._cue_cache:
-            cal = self.task.calibrations.sound_calibration
-            gain_noise = [cal.get_sound_gain(ch, 72, "whitenoise") for ch in (0, 1)]
-            gain_tone = [cal.get_sound_gain(ch, 72, "tone_3500") for ch in (0, 1)]
-            self._cue_cache[side] = cue_generator(side, gain_noise, gain_tone)
-        left, right = self._cue_cache[side]
-        sound_device.load(left=left, right=right)
+    # Sound-related functions, called from the Bpod via softcodes (or from the
+    # GUI buttons).
 
     # playing sound from both speakers with constant gain (not calibrated)
     # useful to use from the GUI buttons
     def function1(self):
         """Play Manual Sound"""
         sound = whitenoise_generator(2, 0.05)
-        sound_device.load(left=sound, right= sound)
+        sound_device.load(left=sound, right=sound)
         sound_device.play()
-
 
     def function2(self):
         """Load left sound"""
         left_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
-            0, 70, "whitenoise") 
+            0, 70, "whitenoise"  # BLANK: 72 dB? 0.4 s?
+        )
         left_sound = whitenoise_generator(0.5, left_calibration)
         sound_device.load(left=left_sound, right=None)
 
     def function3(self):
         """Load right sound"""
         right_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
-            1, 70, "whitenoise")
+            1, 70, "whitenoise"  # BLANK: 72 dB? 0.4 s?
+        )
         right_sound = whitenoise_generator(0.5, right_calibration)
         sound_device.load(left=None, right=right_sound)
 
     def function4(self):
         """Load cue sound"""
         left_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
-                    0, 70, "tone_3500")
+            0, 70, "tone_3500"
+        )
         right_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
-                    1, 70, "tone_3500")
-        left_sound = cue_generator(left_calibration)
-        right_sound = cue_generator(right_calibration)
+            1, 70, "tone_3500"
+        )
+        left_sound, right_sound = cue_generator((left_calibration, right_calibration))
         sound_device.load(left=left_sound, right=right_sound)
-
 
     def function5(self):
         """Play loaded sound"""
@@ -57,45 +52,32 @@ class DirectFunctions(DirectFunctionsBase):
         """Stop sound"""
         sound_device.stop()
 
-    """
-    These are functions to control servo motors for the lickport. 
-    The functions are called from the Bpod via softcodes.
-    
-    Questions:
-    1) difference between self.task.settings and self.settings?
-    2) self.task.settings.motor_position --> how do I define position 0 here?
-    3) self.settings.motor_position --> will this pick on the last value of the motor?
-    """
+    # Functions to control the lickport motor (box motor 1: ports towards/away
+    # from the animal), called from the Bpod via softcodes. motor_box1 must be
+    # enabled (MOTOR1_BOX in SETTINGS -> BOX SETTINGS) and calibrated
+    # (MONITOR -> BOX -> MOTOR1 VALUES): open() and close() go to its calibrated
+    # angles, move() to any angle. The moves return immediately and run in the
+    # background.
+    # self.task.settings are the settings of the running task (the subject's
+    # training protocol values); lickport_distance is the value the subject
+    # had at the end of its previous session, or the new one set mid-session.
 
     def function7(self):
-        """Retract motor3"""
-        self.task.motor_box3.close()
+        """Retract lickport"""
+        motor_box1.close()
 
     def function8(self):
-        """Advance motor3"""
-        self.task.motor_box3.open()
-
-    def function9(self):
-        """Move motor to the current lickport_distance (last value from the previous session
-        at trial 1, or the newly stepped value mid-session)."""
-        self.task.motor_box3.set_position(self.task.settings.lickport_distance)
-    
-    def function10(self):
-        """Move motor to the initial position."""
-        self.task.motor_box3.set_position(self.task.settings.lickport_start_distance)
-
-    # Head clamp: motor 1 of the box drives the pistons that fix the head.
-    # Called from HeadFixationTeaching via softcodes 11 (fix) and 12 (release).
-    # Angles and travel times are calibrated in MONITOR -> BOX -> MOTOR1 VALUES.
-
-    def function11(self):
-        """Close head clamp"""
-        # hold=True: keep holding torque so the mouse can't push the clamp open
-        motor_box1.close(hold=True)
-
-    def function12(self):
-        """Open head clamp"""
+        """Advance lickport"""
         motor_box1.open()
 
+    def function9(self):
+        """Move motor to the current lickport_distance (last value from the previous
+        session at trial 1, or the newly stepped value mid-session)."""
+        motor_box1.move(round(self.task.settings.lickport_distance))
 
+    def function10(self):
+        """Move motor to the initial position."""
+        motor_box1.move(round(self.task.settings.lickport_start_distance))
 
+    # The head clamp is an electromagnet board, not a servo, so there are no
+    # clamp functions here. BLANK: how the board is controlled.

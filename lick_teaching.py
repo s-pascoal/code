@@ -1,4 +1,7 @@
+import math
+
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
+from village.scripts.time_utils import time_utils
 
 
 class LickTeaching(TaskBase):
@@ -29,6 +32,15 @@ Softcodes (direct_functions):
                 port=2, volume=self.settings.water_volume
             ),
         }
+        # Used by gpio_trigger.py, scale_trigger.py and online_plot.py
+        self.start_timestamp = time_utils.now_timestamp()
+        self.number_of_switches = 0
+        self.switch_on = False
+        self.state_weight = "Normal"
+        self.scale_weight = 0.0
+        self.switch_log = []  # (timestamp, "on" / "off")
+        self.weight_log = []  # (timestamp, weight in g)
+        self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
     def create_trial(self):
         side = "left" if ((self.current_trial - 1) // 3) % 2 == 0 else "right"
@@ -117,24 +129,26 @@ Softcodes (direct_functions):
         if correct_licks and (not wrong_licks or correct_licks[0] <= wrong_licks[0]):
             outcome = "correct"
             response_side = self.side
-            water = self.settings.water_volume
         elif wrong_licks:
             outcome = "incorrect"
             response_side = "right" if self.side == "left" else "left"
-            water = 0
-        
         else:
             outcome = "miss" # here miss would only be possible 1 time (if the animal never licked at all)
             response_side = "none"
-            water = 0
+
+        # Water depends on whether the valve state was actually reached (choice
+        # only ends with a lick on the correct port, so even an "incorrect"
+        # first lick is rewarded later). With Bpod, a state that was not
+        # visited in this trial is still in trial_data, as [nan].
+        rewarded = not math.isnan(
+            self.trial_data.get("STATE_deliver_water_START", [math.nan])[0]
+        )
+        water = self.settings.water_volume if rewarded else 0
 
         self.register_value("rewarded_side", self.side)
         self.register_value("water", water)
         self.register_value("outcome", outcome)
         self.register_value("response_side", response_side)
-
-    def close(self):
-        pass
 
     def close(self):
         pass
