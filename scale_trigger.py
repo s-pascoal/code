@@ -22,6 +22,7 @@ class ScaleTrigger(ScaleTriggerBase):
         self.task.scale_weight = weight
         self.task.weight_log.append((timestamp, weight))
 
+        # BLANK: struggle signal?
         if weight > 30 and self.task.state_weight != "Heavy":
             self.task.state_weight = "Heavy"
             self.task.register_raspberry_event("Heavy", timestamp)

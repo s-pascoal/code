@@ -15,7 +15,7 @@ lickport advances towards the headport; then every trial just waits 10 s.
 After one session -> LickHeadportTeaching (see training_protocol.py).
 
 Softcodes (direct_functions):
-8 = advance motor3 (lickport)
+8 = advance lickport (motor 1)
 """
 
     def start(self):

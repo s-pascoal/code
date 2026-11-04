@@ -4,7 +4,7 @@ from sound_functions import sound_device, whitenoise_generator
 import math
 
 # Lickport variables
-START_ANGLE = 60.0     # open angle = closest to the headport (training start)
+START_ANGLE = 60.0     # BLANK: motor 1 angle closest to the headport (start)
 STEP_ANGLE = 5.0       # PLACEHOLDER: degrees that equal 3 mm
 FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
@@ -50,6 +50,7 @@ Softcodes (direct_functions):
         }
 
         cal = self.calibrations.sound_calibration
+        # BLANK: 0.4 s? 72 dB?
         self.cue = {
             "left": whitenoise_generator(0.5, cal.get_sound_gain(0, 70, "whitenoise")),
             "right": whitenoise_generator(0.5, cal.get_sound_gain(1, 70, "whitenoise")),
