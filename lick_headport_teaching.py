@@ -151,84 +151,199 @@ Softcodes (direct_functions):
         )
 
     def after_trial(self):
-        """Work out response_side and outcome for this trial.
-        Whichever side the animal poked first (if any) after the side sound
-        turned on determines the outcome
+        """Register trial outcomes, licking behaviour, response latency
+        and lickport progression.
         """
-        play_stim_start = self.trial_data.get("STATE_play_stim_START")
-        t_play_stim = play_stim_start[0]
 
-        correct_key, wrong_key = (
-            ("Port1In", "Port2In") if self.side == "left" else ("Port2In", "Port1In")
+        def get_timestamps(key):
+            """Return valid timestamps from a Bpod trial-data field."""
+            values = self.trial_data.get(key, [])
+
+            if values is None:
+                return []
+
+            if not isinstance(values, (list, tuple)):
+                values = [values]
+
+            return [
+                float(t) for t in values
+                if t is not None and not math.isnan(float(t))
+            ]
+
+        def visited(state):
+            return bool(get_timestamps(f"STATE_{state}_START"))
+
+        # --------------------------------------------------
+        # 1. Auditory cue and lick events
+        # --------------------------------------------------
+
+        play_stim_times = get_timestamps("STATE_play_stim_START")
+        t_play_stim = play_stim_times[0] if play_stim_times else math.nan
+
+        left_licks = get_timestamps("Port1In")
+        right_licks = get_timestamps("Port2In")
+
+        correct_licks = (
+            left_licks if self.side == "left" else right_licks
         )
-        correct_licks = [
-            t for t in self.trial_data.get(correct_key, []) if t >= t_play_stim
-        ]
-        wrong_licks = [
-            t for t in self.trial_data.get(wrong_key, []) if t >= t_play_stim
-        ]
+        wrong_licks = (
+            right_licks if self.side == "left" else left_licks
+        )
 
-        # outcome stays based on the FIRST lick (this is what drives the 20-correct counter)
-        if correct_licks and (not wrong_licks or correct_licks[0] <= wrong_licks[0]):
+        # Only consider licks after auditory cue onset for outcome
+        if not math.isnan(t_play_stim):
+
+            correct_licks_after_cue = [
+                t for t in correct_licks if t >= t_play_stim
+            ]
+
+            wrong_licks_after_cue = [
+                t for t in wrong_licks if t >= t_play_stim
+            ]
+
+            all_licks_after_cue = sorted(
+                correct_licks_after_cue + wrong_licks_after_cue
+            )
+
+        else:
+            correct_licks_after_cue = []
+            wrong_licks_after_cue = []
+            all_licks_after_cue = []
+
+        # --------------------------------------------------
+        # 2. First lick and outcome
+        # --------------------------------------------------
+
+        if correct_licks_after_cue and (
+            not wrong_licks_after_cue
+            or correct_licks_after_cue[0] <= wrong_licks_after_cue[0]
+        ):
             outcome = "correct"
             response_side = self.side
-        elif wrong_licks:
+
+        elif wrong_licks_after_cue:
             outcome = "incorrect"
             response_side = "right" if self.side == "left" else "left"
+
         else:
             outcome = "miss"
             response_side = "none"
 
-        def visited(state):
-            # With Bpod, a state that was not visited in this trial is still in
-            # trial_data, as [nan] -- so check the time, not just the key.
-            return not math.isnan(
-                self.trial_data.get(f"STATE_{state}_START", [math.nan])[0]
+        # --------------------------------------------------
+        # 3. Response latency
+        # --------------------------------------------------
+
+        response_latency = (
+            all_licks_after_cue[0] - t_play_stim
+            if all_licks_after_cue
+            else math.nan
+        )
+
+        # --------------------------------------------------
+        # 4. Count left and right licks during choice
+        # --------------------------------------------------
+
+        choice_starts = get_timestamps("STATE_choice_START")
+        choice_ends = get_timestamps("STATE_choice_END")
+
+        # Each choice entry should have a corresponding exit.
+        choice_intervals = list(zip(choice_starts, choice_ends))
+
+        def count_choice_licks(licks):
+            return sum(
+                1 for lick in licks
+                if any(start <= lick <= end
+                    for start, end in choice_intervals)
             )
-        # water depends on whether the valve state was actually reached
+
+        choice_left_licks = count_choice_licks(left_licks)
+        choice_right_licks = count_choice_licks(right_licks)
+
+        # --------------------------------------------------
+        # 5. Water delivery
+        # --------------------------------------------------
+
         rewarded = visited("deliver_water")
+
         water = self.settings.water_volume if rewarded else 0
+
+        # --------------------------------------------------
+        # 6. Register trial variables
+        # --------------------------------------------------
 
         self.register_value("rewarded_side", self.side)
         self.register_value("water", water)
         self.register_value("outcome", outcome)
         self.register_value("response_side", response_side)
 
+        self.register_value("response_latency", response_latency)
+
+        self.register_value("choice_left_licks", choice_left_licks)
+        self.register_value("choice_right_licks", choice_right_licks)
+
+        # --------------------------------------------------
+        # 7. Lickport progression
+        # --------------------------------------------------
+
         distance_during_trial = float(self.settings.lickport_distance)
+
         timed_out = visited("no_lick_timeout")
 
         if timed_out:
-            # no lick for 30 s: make it easier, advance toward the window
+
+            # No lick for 30 seconds: move closer to the headport
             if distance_during_trial < START_ANGLE:
-                self.settings.lickport_distance = min(distance_during_trial + STEP_ANGLE, START_ANGLE)
+
+                self.settings.lickport_distance = min(
+                    distance_during_trial + STEP_ANGLE,
+                    START_ANGLE
+                )
+
                 self.move_motor_pending = True
+
             self.correct_count = 0
 
+        elif rewarded:
 
-        # HERE CHOOSE WHICH CONDITION IS BEST!
-
-        elif rewarded:            # After every rewarded trial independent of 1st licking
+            # Advance after 20 rewarded trials
             self.correct_count += 1
-            if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
-                self.settings.lickport_distance = max(distance_during_trial - STEP_ANGLE, FINAL_ANGLE)
+
+            if (
+                self.correct_count >= CORRECT_TO_STEP
+                and distance_during_trial > FINAL_ANGLE
+            ):
+
+                self.settings.lickport_distance = max(
+                    distance_during_trial - STEP_ANGLE,
+                    FINAL_ANGLE
+                )
+
                 self.move_motor_pending = True
                 self.correct_count = 0
 
-        '''
+        # --------------------------------------------------
+        # 8. Register lickport and switch information
+        # --------------------------------------------------
 
-        elif outcome == "correct": # After every 20 correct 1st licks
-            self.correct_count += 1
-            if self.correct_count >= CORRECT_TO_STEP and distance_during_trial > FINAL_ANGLE:
-                # 20 correct: make it harder, retract away from the window
-                self.settings.lickport_distance = max(distance_during_trial - STEP_ANGLE, FINAL_ANGLE)
-                self.move_motor_pending = True
-                self.correct_count = 0
+        self.register_value(
+            "lickport_distance",
+            distance_during_trial
+        )
 
-        '''
+        self.register_value(
+            "lickport_distance_next",
+            float(self.settings.lickport_distance)
+        )
 
-        self.register_value("lickport_distance", distance_during_trial)
-        self.register_value("lickport_distance_next", float(self.settings.lickport_distance))
-        self.register_value("number_of_switches", self.number_of_switches)
+        self.register_value(
+            "number_of_switches",
+            self.number_of_switches
+        )
+
+        self.register_value(
+            "switch_on",
+            bool(self.switch_on)
+        )
 
     def close(self):
         pass
