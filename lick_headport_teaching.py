@@ -10,8 +10,8 @@ FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
 NO_LICK_TIMEOUT = 30   # after how many seconds no lick the motor retracts to previous stage
 
-# GO cue: the LEDs of both lick ports, so it gives no side information
-GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
+# GO cue: the rig's only LED (led 2), on in every trial. BLANK: confirm PWM2
+GO_LED = (BpodOutput.PWM2, 255)
 
 
 class LickHeadportTeaching(TaskBase):
@@ -116,7 +116,7 @@ Softcodes (direct_functions):
                 wrong_port_in: "wrong_lick",     # wrong port: restart the 30 s clock
                 BpodEvent.Tup: "no_lick_timeout" # silence on both ports
             },
-            output_actions=GO_LEDS,
+            output_actions=[GO_LED],
         )
 
         # A state pointing to itself does not restart its timer in Bpod (it is
@@ -126,7 +126,7 @@ Softcodes (direct_functions):
             state_name="wrong_lick",
             state_timer=0,
             state_change_conditions={BpodEvent.Tup: "choice"},
-            output_actions=GO_LEDS,
+            output_actions=[GO_LED],
         )
 
         self.bpod.add_state(

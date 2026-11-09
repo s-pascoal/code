@@ -10,7 +10,7 @@ from village.scripts.time_utils import time_utils
 # power the magnet lets go and the animal is free.
 CLAMP_TRAVEL_TIME = None  # BLANK: seconds the pistons need to go down/up
 RELEASE_OUTPUT = None  # BLANK: Bpod output that cuts the magnet?
-# BLANK: what happens if the Bpod stops mid-fixation?
+# If the Bpod fails, the board's own microprocessor ends the fixation. BLANK: confirm
 
 # Fixation duration
 START_FIXATION = 1  # first fixation duration (same as default_training_settings)
@@ -30,8 +30,8 @@ STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # scale_trigger.py "Heavy"; BLANK: veri
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
 
-# GO cue: the LEDs of both lick ports, so it gives no side information
-GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
+# GO cue: the rig's only LED (led 2), on in every trial. BLANK: confirm PWM2
+GO_LED = (BpodOutput.PWM2, 255)
 
 
 class HeadFixationTeaching(TaskBase):
@@ -229,7 +229,7 @@ class HeadFixationTeaching(TaskBase):
             state_name="choice",
             state_timer=0,
             state_change_conditions={port_in: "water", **release},
-            output_actions=GO_LEDS,
+            output_actions=[GO_LED],
         )
 
         # Still fixed after the water: the trial ends here and the next one
