@@ -4,14 +4,14 @@ from sound_functions import sound_device, whitenoise_generator
 import math
 
 # Lickport variables
-START_ANGLE = 200.0    # motor 1 angle closest to the headport; BLANK: confirm
-STEP_ANGLE = 5.0       # PLACEHOLDER: degrees that equal 3 mm
-FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
+START_ANGLE = 100.0    # motor 1 angle closest to the headport; 
+STEP_ANGLE = 21.0      # PLACEHOLDER: degrees that equal 3 mm - 1mm = 7 degrees, 3mm = 21 degrees
+FINAL_ANGLE = 50.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
-NO_LICK_TIMEOUT = 30   # after how many seconds no lick the motor retracts to previous stage
+NO_LICK_TIMEOUT = 90   # after how many seconds no lick the motor retracts to previous stage
 
-# GO cue: the LEDs of both lick ports, so it gives no side information
-GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
+# GO cue: the LED although only 1 side, this way it doesnt matter to which board its connected
+GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 
 class LickHeadportTeaching(TaskBase):
@@ -116,7 +116,7 @@ Softcodes (direct_functions):
                 wrong_port_in: "wrong_lick",     # wrong port: restart the 30 s clock
                 BpodEvent.Tup: "no_lick_timeout" # silence on both ports
             },
-            output_actions=GO_LEDS,
+            output_actions=GO_LED,
         )
 
         # A state pointing to itself does not restart its timer in Bpod (it is
@@ -126,7 +126,7 @@ Softcodes (direct_functions):
             state_name="wrong_lick",
             state_timer=0,
             state_change_conditions={BpodEvent.Tup: "choice"},
-            output_actions=GO_LEDS,
+            output_actions=GO_LED,
         )
 
         self.bpod.add_state(
@@ -291,7 +291,7 @@ Softcodes (direct_functions):
 
         if timed_out:
 
-            # No lick for 30 seconds: move closer to the headport
+            # No lick for 90 seconds: move closer to the headport
             if distance_during_trial < START_ANGLE:
 
                 self.settings.lickport_distance = min(
@@ -301,7 +301,7 @@ Softcodes (direct_functions):
 
                 self.move_motor_pending = True
 
-            self.correct_count = 0
+            # self.correct_count = 0 # reset correct count after a timeout, so the animal has to get 20 correct trials again to retract the lickport
 
         elif rewarded:
 

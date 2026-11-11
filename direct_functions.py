@@ -34,7 +34,7 @@ class DirectFunctions(DirectFunctionsBase):
         sound_device.load(left=None, right=right_sound)
 
     def function4(self):
-        """Load cue sound"""
+        """Load go sound"""
         left_calibration = self.task.calibrations.sound_calibration.get_sound_gain(
             0, 70, "tone_3500"
         )
