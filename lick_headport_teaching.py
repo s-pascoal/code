@@ -1,6 +1,12 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 from village.scripts.time_utils import time_utils
-from sound_functions import sound_device, whitenoise_generator
+from sound_functions import (
+    ramp,
+    sound_device,
+    stimulus_then_go,
+    tone_3500,
+    whitenoise_generator,
+)
 import math
 
 # Lickport variables
@@ -10,8 +16,19 @@ FINAL_ANGLE = 20.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
 NO_LICK_TIMEOUT = 30   # after how many seconds no lick the motor retracts to previous stage
 
-# GO cue: the rig's only LED (led 2), on in every trial. BLANK: confirm PWM2
-GO_LED = (BpodOutput.PWM2, 255)
+# Stimulus: white noise from the rewarded side
+STIMULUS_DURATION = 0.5  # BLANK: 0.4 s?
+STIMULUS_DB = 70  # BLANK: 72 dB?
+
+# GO cue = LED + 3500 Hz tone from both sides, starting together after the
+# stimulus. The tone lasts GO_TONE_DURATION; the LED stays on until the response.
+GO_LED = (BpodOutput.PWM2, 255)  # the rig's only LED (led 2). BLANK: confirm PWM2
+GO_TONE_DURATION = 0.5  # seconds
+GO_TONE_DB = 70
+
+# Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
+PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
+STOP_SOFTCODE = BpodOutput.SoftCode6  # function6: stop sound
 
 
 class LickHeadportTeaching(TaskBase):
@@ -24,8 +41,10 @@ Lick and Headport Teaching Task
 ----------------------------------------------------------------
 The lickport is at the closest position to the headport, no head fixation.
 Left and right ports alternate in blocks of 3 trials. Each trial starts with a
-side cue (broadband noise, 400 ms, from the rewarded side) followed by a GO cue
-(LED). Mice must lick the rewarded port to get water.
+stimulus (white noise, 0.5 s, from the rewarded side) followed by the GO cue
+(LED + 3500 Hz tone from both sides, 0.5 s; the LED stays on until the
+response). Mice must lick the rewarded port to get water; licks count from GO
+onset, and a correct lick stops the tone.
 Wrong licks are ignored (correction is okay, no punishment), but they restart
 the 30 s no-lick timeout.
 
@@ -34,8 +53,10 @@ After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
 When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage (HeadFixationTeaching).
 
 Softcodes (direct_functions):
-5 = play loaded cue
-- Sound load comes directly from sound_functions, calibrated in start, and loaded in every trial depending on side
+5 = play loaded sound (stimulus then GO tone, one buffer)
+6 = stop sound (correct lick cuts the GO tone)
+- The trial sound is built once per side in start (calibrated), and loaded in
+  every trial depending on side
 
 """
 
@@ -49,12 +70,32 @@ Softcodes (direct_functions):
             ),
         }
 
+        # Trial sound per rewarded side, built once per session: stimulus from
+        # that side, then the GO tone from both sides (ramped, no clicks).
         cal = self.calibrations.sound_calibration
-        # BLANK: 0.4 s? 72 dB?
-        self.cue = {
-            "left": whitenoise_generator(0.5, cal.get_sound_gain(0, 70, "whitenoise")),
-            "right": whitenoise_generator(0.5, cal.get_sound_gain(1, 70, "whitenoise")),
-        }
+        go_left = ramp(
+            tone_3500(
+                GO_TONE_DURATION,
+                cal.get_sound_gain(speaker=0, dB=GO_TONE_DB, sound_name="tone_3500"),
+            )
+        )
+        go_right = ramp(
+            tone_3500(
+                GO_TONE_DURATION,
+                cal.get_sound_gain(speaker=1, dB=GO_TONE_DB, sound_name="tone_3500"),
+            )
+        )
+        self.trial_sound = {}
+        for speaker, side in enumerate(["left", "right"]):
+            stimulus = whitenoise_generator(
+                STIMULUS_DURATION,
+                cal.get_sound_gain(
+                    speaker=speaker, dB=STIMULUS_DB, sound_name="whitenoise"
+                ),
+            )
+            self.trial_sound[side] = stimulus_then_go(
+                stimulus, side, go_left, go_right
+            )
 
         self.correct_count = 0 # correct trials at current lickport distance
         self.move_motor_pending = False
@@ -80,12 +121,9 @@ Softcodes (direct_functions):
         wrong_port_in = BpodEvent.Port2In if side == "left" else BpodEvent.Port1In
         valve = BpodOutput.Valve1 if side == "left" else BpodOutput.Valve2
 
-        # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
-        play_softcode = BpodOutput.SoftCode5
-        if side == "left":
-            sound_device.load(left=self.cue["left"], right=None)
-        else:
-            sound_device.load(left=None, right=self.cue["right"])
+        # Load this trial's sound now; play_stim only sends the play softcode
+        left_sound, right_sound = self.trial_sound[side]
+        sound_device.load(left=left_sound, right=right_sound)
 
                 # HEADPORT ENTRY TEACHING
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
@@ -101,11 +139,13 @@ Softcodes (direct_functions):
             )
             self.move_motor_pending = False
 
+        # Plays the whole buffer: the GO tone starts when the stimulus ends,
+        # together with "choice" (GO LED).
         self.bpod.add_state(
             state_name="play_stim",
-            state_timer=0.5,
+            state_timer=STIMULUS_DURATION,
             state_change_conditions={BpodEvent.Tup: "choice"},
-            output_actions=[play_softcode],
+            output_actions=[PLAY_SOFTCODE],
         )
 
         self.bpod.add_state(
@@ -140,7 +180,7 @@ Softcodes (direct_functions):
             state_name="deliver_water",
             state_timer=self.valve_time[side],
             state_change_conditions={BpodEvent.Tup: "reward"},
-            output_actions=[valve],
+            output_actions=[valve, STOP_SOFTCODE],  # cut the GO tone if still on
         )
 
         self.bpod.add_state(
@@ -174,11 +214,14 @@ Softcodes (direct_functions):
             return bool(get_timestamps(f"STATE_{state}_START"))
 
         # --------------------------------------------------
-        # 1. Auditory cue and lick events
+        # 1. GO onset and lick events
         # --------------------------------------------------
 
-        play_stim_times = get_timestamps("STATE_play_stim_START")
-        t_play_stim = play_stim_times[0] if play_stim_times else math.nan
+        # Outcome and latency count from the first entry into "choice" (GO LED
+        # on), not from the cue: Bpod only reacts to licks during "choice", so
+        # a lick during the 0.5 s cue gets no water and must not count.
+        choice_times = get_timestamps("STATE_choice_START")
+        t_go = choice_times[0] if choice_times else math.nan
 
         left_licks = get_timestamps("Port1In")
         right_licks = get_timestamps("Port2In")
@@ -190,38 +233,33 @@ Softcodes (direct_functions):
             right_licks if self.side == "left" else left_licks
         )
 
-        # Only consider licks after auditory cue onset for outcome
-        if not math.isnan(t_play_stim):
+        # Only consider licks after GO onset for outcome
+        if not math.isnan(t_go):
 
-            correct_licks_after_cue = [
-                t for t in correct_licks if t >= t_play_stim
+            correct_licks_after_go = [
+                t for t in correct_licks if t >= t_go
             ]
 
-            wrong_licks_after_cue = [
-                t for t in wrong_licks if t >= t_play_stim
+            wrong_licks_after_go = [
+                t for t in wrong_licks if t >= t_go
             ]
-
-            all_licks_after_cue = sorted(
-                correct_licks_after_cue + wrong_licks_after_cue
-            )
 
         else:
-            correct_licks_after_cue = []
-            wrong_licks_after_cue = []
-            all_licks_after_cue = []
+            correct_licks_after_go = []
+            wrong_licks_after_go = []
 
         # --------------------------------------------------
         # 2. First lick and outcome
         # --------------------------------------------------
 
-        if correct_licks_after_cue and (
-            not wrong_licks_after_cue
-            or correct_licks_after_cue[0] <= wrong_licks_after_cue[0]
+        if correct_licks_after_go and (
+            not wrong_licks_after_go
+            or correct_licks_after_go[0] <= wrong_licks_after_go[0]
         ):
             outcome = "correct"
             response_side = self.side
 
-        elif wrong_licks_after_cue:
+        elif wrong_licks_after_go:
             outcome = "incorrect"
             response_side = "right" if self.side == "left" else "left"
 
@@ -233,9 +271,16 @@ Softcodes (direct_functions):
         # 3. Response latency
         # --------------------------------------------------
 
+        # Unlike the outcome, latency counts from cue onset, so licks during
+        # the cue (before GO) show up as latencies below 0.5 s.
+        cue_times = get_timestamps("STATE_play_stim_START")
+        t_cue = cue_times[0] if cue_times else math.nan
+        licks_after_cue = sorted(
+            t for t in left_licks + right_licks if t >= t_cue
+        )
         response_latency = (
-            all_licks_after_cue[0] - t_play_stim
-            if all_licks_after_cue
+            licks_after_cue[0] - t_cue
+            if licks_after_cue
             else math.nan
         )
 

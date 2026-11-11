@@ -85,6 +85,34 @@ def ramp(x, ms=5):
     w[-n:] = w[:n][::-1]
     return x * w
 
+def stimulus_then_go(
+    stimulus: np.ndarray,
+    side: str,
+    go_left: np.ndarray,
+    go_right: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    One trial's sound: the stimulus on the rewarded side only, then the GO tone
+    on both sides, in one buffer. The sound device holds one loaded sound at a
+    time, so both are played by a single play softcode, and the GO tone starts
+    exactly one stimulus length after the stimulus.
+    Args:
+        stimulus (np.ndarray): Stimulus for the rewarded side's speaker
+        side (str): "left" or "right", the rewarded side
+        go_left (np.ndarray): GO tone for the left speaker
+        go_right (np.ndarray): GO tone for the right speaker
+    Returns:
+        tuple[np.ndarray, np.ndarray]: Left and right channels
+    """
+    silence = np.zeros(len(stimulus))
+    left_first = stimulus if side == "left" else silence
+    right_first = silence if side == "left" else stimulus
+    return (
+        np.concatenate([left_first, go_left]),
+        np.concatenate([right_first, go_right]),
+    )
+
+
 def cue_generator(gain_tone):
     tone = ramp(tone_generator(0.1, 1, 3500))
     return gain_tone[0] * tone, gain_tone[1] * tone
