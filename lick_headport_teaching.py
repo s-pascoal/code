@@ -1,12 +1,6 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 from village.scripts.time_utils import time_utils
-from sound_functions import (
-    ramp,
-    sound_device,
-    stimulus_then_go,
-    tone_3500,
-    whitenoise_generator,
-)
+from sound_functions import sound_device, whitenoise_generator
 import math
 
 # Lickport variables
@@ -20,16 +14,13 @@ NO_LICK_TIMEOUT = 90   # after how many seconds no lick the motor retracts to pr
 STIMULUS_DURATION = 0.5  # BLANK: 0.4 s?
 STIMULUS_DB = 70  # BLANK: 72 dB?
 
-# GO cue = LED + 3500 Hz tone from both sides, starting together after the
-# stimulus. The tone lasts GO_TONE_DURATION; the LED stays on until the response.
+# GO cue = LED only, from the end of the stimulus until the response (no tone
+# for now; a GO tone may be added later).
 # GO cue: the LED although only 1 side, this way it doesnt matter to which board its connected
 GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
-GO_TONE_DURATION = 0.5  # seconds
-GO_TONE_DB = 70
 
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
-STOP_SOFTCODE = BpodOutput.SoftCode6  # function6: stop sound
 
 
 class LickHeadportTeaching(TaskBase):
@@ -43,19 +34,17 @@ Lick and Headport Teaching Task
 The lickport is at the closest position to the headport, no head fixation.
 Left and right ports alternate in blocks of 3 trials. Each trial starts with a
 stimulus (white noise, 0.5 s, from the rewarded side) followed by the GO cue
-(LED + 3500 Hz tone from both sides, 0.5 s; the LED stays on until the
-response). Mice must lick the rewarded port to get water; licks count from GO
-onset, and a correct lick stops the tone.
+(LED, on until the response). Mice must lick the rewarded port to get water;
+licks count from GO onset.
 Wrong licks are ignored (correction is okay, no punishment), but they restart
-the 30 s no-lick timeout.
+the 90 s no-lick timeout. A timeout has no cue or punishment.
 
 After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
 
 When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage (HeadFixationTeaching).
 
 Softcodes (direct_functions):
-5 = play loaded sound (stimulus then GO tone, one buffer)
-6 = stop sound (correct lick cuts the GO tone)
+5 = play loaded sound (stimulus)
 - The trial sound is built once per side in start (calibrated), and loaded in
   every trial depending on side
 
@@ -71,21 +60,9 @@ Softcodes (direct_functions):
             ),
         }
 
-        # Trial sound per rewarded side, built once per session: stimulus from
-        # that side, then the GO tone from both sides (ramped, no clicks).
+        # Trial sound per rewarded side, built once per session: the stimulus
+        # from that side's speaker only, silence on the other.
         cal = self.calibrations.sound_calibration
-        go_left = ramp(
-            tone_3500(
-                GO_TONE_DURATION,
-                cal.get_sound_gain(speaker=0, dB=GO_TONE_DB, sound_name="tone_3500"),
-            )
-        )
-        go_right = ramp(
-            tone_3500(
-                GO_TONE_DURATION,
-                cal.get_sound_gain(speaker=1, dB=GO_TONE_DB, sound_name="tone_3500"),
-            )
-        )
         self.trial_sound = {}
         for speaker, side in enumerate(["left", "right"]):
             stimulus = whitenoise_generator(
@@ -94,8 +71,8 @@ Softcodes (direct_functions):
                     speaker=speaker, dB=STIMULUS_DB, sound_name="whitenoise"
                 ),
             )
-            self.trial_sound[side] = stimulus_then_go(
-                stimulus, side, go_left, go_right
+            self.trial_sound[side] = (
+                (stimulus, None) if side == "left" else (None, stimulus)
             )
 
         self.correct_count = 0 # correct trials at current lickport distance
@@ -140,8 +117,7 @@ Softcodes (direct_functions):
             )
             self.move_motor_pending = False
 
-        # Plays the whole buffer: the GO tone starts when the stimulus ends,
-        # together with "choice" (GO LED).
+        # Stimulus; "choice" (GO LED) starts when it ends
         self.bpod.add_state(
             state_name="play_stim",
             state_timer=STIMULUS_DURATION,
@@ -181,7 +157,7 @@ Softcodes (direct_functions):
             state_name="deliver_water",
             state_timer=self.valve_time[side],
             state_change_conditions={BpodEvent.Tup: "reward"},
-            output_actions=[valve, STOP_SOFTCODE],  # cut the GO tone if still on
+            output_actions=[valve],
         )
 
         self.bpod.add_state(
