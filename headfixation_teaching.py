@@ -33,7 +33,8 @@ STOP_SOFTCODE = BpodOutput.SoftCode6  # function6: stop sound
 
 # GO cue = LED + 3500 Hz tone from both sides, starting together after the
 # stimulus. The tone lasts GO_TONE_DURATION; the LED stays on until the response.
-GO_LED = (BpodOutput.PWM2, 255)  # the rig's only LED (led 2). BLANK: confirm PWM2
+# GO cue: the LED although only 1 side, this way it doesnt matter to which board its connected
+GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 GO_TONE_DURATION = 0.5  # seconds
 GO_TONE_DB = 70
 
@@ -245,7 +246,7 @@ class HeadFixationTeaching(TaskBase):
             state_name="choice",
             state_timer=0,
             state_change_conditions={port_in: "water", **release},
-            output_actions=[GO_LED],
+            output_actions=GO_LED,
         )
 
         # Still fixed after the water: the trial ends here and the next one
