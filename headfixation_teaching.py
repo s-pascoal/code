@@ -20,7 +20,7 @@ FINAL_FIXATION = 30  # fixation duration that ends this stage
 
 # Trial structure
 STIMULUS_DURATION = 0.5  # white noise from the rewarded side. BLANK: 0.4 s?
-STIMULUS_DB = 70  # BLANK: 72 dB?
+STIMULUS_DB = 70
 TRIALS_PER_SIDE = 3  # trials before switching side (as in LickHeadportTeaching)
 
 # Softcodes, Raspberry Pi -> Bpod (events the state machine listens to)
@@ -30,9 +30,7 @@ STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # scale_trigger.py "Heavy"; BLANK: veri
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
 
-# GO cue = LED only, from the end of the stimulus until the response (no tone
-# for now; a GO tone may be added later).
-# GO cue: the LED although only 1 side, this way it doesnt matter to which board its connected
+# GO cue: LED on until the response. Both outputs, so it works on either port
 GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 
@@ -117,20 +115,22 @@ class HeadFixationTeaching(TaskBase):
             ),
         }
 
-        # Trial sound per rewarded side, built once per session: the stimulus
-        # from that side's speaker only, silence on the other.
+        # Stimuli, built once per session (calibrated white noise, one side)
         cal = self.calibrations.sound_calibration
-        self.trial_sound = {}
-        for speaker, side in enumerate(["left", "right"]):
-            stimulus = whitenoise_generator(
+        self.stimulus = {
+            "left": whitenoise_generator(
                 duration=STIMULUS_DURATION,
                 gain=cal.get_sound_gain(
-                    speaker=speaker, dB=STIMULUS_DB, sound_name="whitenoise"
+                    speaker=0, dB=STIMULUS_DB, sound_name="whitenoise"
                 ),
-            )
-            self.trial_sound[side] = (
-                (stimulus, None) if side == "left" else (None, stimulus)
-            )
+            ),
+            "right": whitenoise_generator(
+                duration=STIMULUS_DURATION,
+                gain=cal.get_sound_gain(
+                    speaker=1, dB=STIMULUS_DB, sound_name="whitenoise"
+                ),
+            ),
+        }
 
         # Warm-up: each session starts one step below where the last one ended,
         # never below the first duration.
@@ -150,6 +150,7 @@ class HeadFixationTeaching(TaskBase):
         self.state_weight = "Normal"
         self.scale_weight = 0.0
         self.switch_log = []  # (timestamp, "on" / "off")
+        self.switch_log_saved = 0  # switch_log entries already registered
         self.weight_log = []  # (timestamp, weight in g)
         self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
@@ -179,10 +180,12 @@ class HeadFixationTeaching(TaskBase):
             self.add_release_states()
             return
 
-        # Load this trial's sound now, before the trial runs; play_stim only
+        # Load this trial's stimulus now, before the trial runs; play_stim only
         # sends the play softcode.
-        left_sound, right_sound = self.trial_sound[self.side]
-        sound_device.load(left=left_sound, right=right_sound)
+        if self.side == "left":
+            sound_device.load(left=self.stimulus["left"], right=None)
+        else:
+            sound_device.load(left=None, right=self.stimulus["right"])
 
         # Ways out of a fixation, valid in every state while the head is fixed.
         release = {
@@ -304,6 +307,11 @@ class HeadFixationTeaching(TaskBase):
         )
         self.register_value("time_up_count", self.time_up_count)
         self.register_value("number_of_switches", self.number_of_switches)
+
+        # Switch changes since the previous trial, for the session plot
+        new_changes = self.switch_log[self.switch_log_saved :]
+        self.switch_log_saved += len(new_changes)
+        self.register_value("switch_changes", new_changes)
 
     def close(self):
         # BLANK: make sure the magnet is off at the end, even if the session was

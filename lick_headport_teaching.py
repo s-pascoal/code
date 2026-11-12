@@ -12,11 +12,9 @@ NO_LICK_TIMEOUT = 90   # after how many seconds no lick the motor retracts to pr
 
 # Stimulus: white noise from the rewarded side
 STIMULUS_DURATION = 0.5  # BLANK: 0.4 s?
-STIMULUS_DB = 70  # BLANK: 72 dB?
+STIMULUS_DB = 70
 
-# GO cue = LED only, from the end of the stimulus until the response (no tone
-# for now; a GO tone may be added later).
-# GO cue: the LED although only 1 side, this way it doesnt matter to which board its connected
+# GO cue: LED on until the response. Both outputs, so it works on either port
 GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
@@ -60,20 +58,22 @@ Softcodes (direct_functions):
             ),
         }
 
-        # Trial sound per rewarded side, built once per session: the stimulus
-        # from that side's speaker only, silence on the other.
+        # Stimuli, built once per session (calibrated white noise, one side)
         cal = self.calibrations.sound_calibration
-        self.trial_sound = {}
-        for speaker, side in enumerate(["left", "right"]):
-            stimulus = whitenoise_generator(
+        self.stimulus = {
+            "left": whitenoise_generator(
                 STIMULUS_DURATION,
                 cal.get_sound_gain(
-                    speaker=speaker, dB=STIMULUS_DB, sound_name="whitenoise"
+                    speaker=0, dB=STIMULUS_DB, sound_name="whitenoise"
                 ),
-            )
-            self.trial_sound[side] = (
-                (stimulus, None) if side == "left" else (None, stimulus)
-            )
+            ),
+            "right": whitenoise_generator(
+                STIMULUS_DURATION,
+                cal.get_sound_gain(
+                    speaker=1, dB=STIMULUS_DB, sound_name="whitenoise"
+                ),
+            ),
+        }
 
         self.correct_count = 0 # correct trials at current lickport distance
         self.move_motor_pending = False
@@ -84,6 +84,7 @@ Softcodes (direct_functions):
         self.state_weight = "Normal"
         self.scale_weight = 0.0
         self.switch_log = []  # (timestamp, "on" / "off")
+        self.switch_log_saved = 0  # switch_log entries already registered
         self.weight_log = []  # (timestamp, weight in g)
         self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
@@ -99,9 +100,11 @@ Softcodes (direct_functions):
         wrong_port_in = BpodEvent.Port2In if side == "left" else BpodEvent.Port1In
         valve = BpodOutput.Valve1 if side == "left" else BpodOutput.Valve2
 
-        # Load this trial's sound now; play_stim only sends the play softcode
-        left_sound, right_sound = self.trial_sound[side]
-        sound_device.load(left=left_sound, right=right_sound)
+        # Load this trial's stimulus now; play_stim only sends the play softcode
+        if side == "left":
+            sound_device.load(left=self.stimulus["left"], right=None)
+        else:
+            sound_device.load(left=None, right=self.stimulus["right"])
 
                 # HEADPORT ENTRY TEACHING
         # Events and outputs needed from Pi-->BPod - SoftCode established in direct_functions
@@ -194,9 +197,8 @@ Softcodes (direct_functions):
         # 1. GO onset and lick events
         # --------------------------------------------------
 
-        # Outcome and latency count from the first entry into "choice" (GO LED
-        # on), not from the cue: Bpod only reacts to licks during "choice", so
-        # a lick during the 0.5 s cue gets no water and must not count.
+        # Outcome counts licks from GO onset (first entry into "choice"): licks
+        # during the stimulus give no water.
         choice_times = get_timestamps("STATE_choice_START")
         t_go = choice_times[0] if choice_times else math.nan
 
@@ -248,16 +250,15 @@ Softcodes (direct_functions):
         # 3. Response latency
         # --------------------------------------------------
 
-        # Unlike the outcome, latency counts from cue onset, so licks during
-        # the cue (before GO) show up as latencies below 0.5 s.
-        cue_times = get_timestamps("STATE_play_stim_START")
-        t_cue = cue_times[0] if cue_times else math.nan
-        licks_after_cue = sorted(
-            t for t in left_licks + right_licks if t >= t_cue
+        # Latency counts from stimulus onset: below 0.5 s = licked before GO
+        stimulus_times = get_timestamps("STATE_play_stim_START")
+        t_stimulus = stimulus_times[0] if stimulus_times else math.nan
+        licks_after_stimulus = sorted(
+            t for t in left_licks + right_licks if t >= t_stimulus
         )
         response_latency = (
-            licks_after_cue[0] - t_cue
-            if licks_after_cue
+            licks_after_stimulus[0] - t_stimulus
+            if licks_after_stimulus
             else math.nan
         )
 
@@ -366,6 +367,11 @@ Softcodes (direct_functions):
             "switch_on",
             bool(self.switch_on)
         )
+
+        # Switch changes since the previous trial, for the session plot
+        new_changes = self.switch_log[self.switch_log_saved :]
+        self.switch_log_saved += len(new_changes)
+        self.register_value("switch_changes", new_changes)
 
     def close(self):
         pass
