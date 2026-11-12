@@ -10,7 +10,7 @@ from village.scripts.time_utils import time_utils
 # power the magnet lets go and the animal is free.
 CLAMP_TRAVEL_TIME = None  # BLANK: seconds the pistons need to go down/up
 RELEASE_OUTPUT = None  # BLANK: Bpod output that cuts the magnet?
-# BLANK: what happens if the Bpod stops mid-fixation?
+# If the Bpod fails, the board's own microprocessor ends the fixation. BLANK: confirm
 
 # Fixation duration
 START_FIXATION = 1  # first fixation duration (same as default_training_settings)
@@ -19,8 +19,8 @@ TIME_UPS_TO_STEP = 20  # time-up releases needed for each step
 FINAL_FIXATION = 30  # fixation duration that ends this stage
 
 # Trial structure
-SIDE_SOUND_DURATION = 0.5  # BLANK: 0.4 s?
-SIDE_SOUND_DB = 70  # BLANK: 72 dB?
+STIMULUS_DURATION = 0.5  # white noise from the rewarded side. BLANK: 0.4 s?
+STIMULUS_DB = 70
 TRIALS_PER_SIDE = 3  # trials before switching side (as in LickHeadportTeaching)
 
 # Softcodes, Raspberry Pi -> Bpod (events the state machine listens to)
@@ -30,8 +30,8 @@ STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # scale_trigger.py "Heavy"; BLANK: veri
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
 
-# GO cue: the LEDs of both lick ports, so it gives no side information
-GO_LEDS = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
+# GO cue: LED on until the response. Both outputs, so it works on either port
+GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 
 class HeadFixationTeaching(TaskBase):
@@ -45,12 +45,12 @@ class HeadFixationTeaching(TaskBase):
         wait_head_entry --SoftCode1 (head entry event)--> fix (the headbar
         switches turn the magnet on, BLANK: to confirm; the fixation time
         starts once the pistons are down)
-        -> play_stim -> choice -> water -> exit
+        -> play_stim (stimulus) -> choice (GO cue) -> water -> exit
     Next trials, while still fixed:
         play_stim -> choice -> water -> exit
-    As in LickHeadportTeaching, the side cue is built once in start() and
-    loaded into the sound device in create_trial, before the trial runs; the
-    Bpod only sends the play softcode.
+    As in LickHeadportTeaching, the stimulus is built once per side in
+    start() and loaded into the sound device in create_trial, before the
+    trial runs; the Bpod only sends the play softcode.
     In every trial, Global Timer 1 is set to the time left in the fixation:
     when it ends -> time_up_release; a struggle -> self_release. Both cut the
     magnet (RELEASE_OUTPUT) and end the fixation.
@@ -68,9 +68,9 @@ class HeadFixationTeaching(TaskBase):
         Head-Fixation Teaching Task
         ----------------------------------------------------------------
         The mouse presses its headbar against the two switches (-> SoftCode1)
-        and the electromagnet fixes its head. While fixed: side cue (white
-        noise from the rewarded side) and GO cue (LED), then a lick on the
-        rewarded port gives water. Left and right alternate every 3 trials.
+        and the electromagnet fixes its head. While fixed: stimulus (white
+        noise from the rewarded side), then GO cue (LED, on until the
+        response), then a lick on the rewarded port gives water. Left and right alternate every 3 trials.
         Wrong licks are ignored (correction is okay, no punishment).
 
         Release:
@@ -81,9 +81,9 @@ class HeadFixationTeaching(TaskBase):
         When fixation_duration > 30 s -> task training.
 
         Softcodes (direct_functions):
-        5 = play loaded cue
-        - Sound load comes directly from sound_functions, calibrated in start,
-          and loaded in every trial depending on side
+        5 = play loaded sound (stimulus)
+        - The trial sound is built once per side in start (calibrated), and
+          loaded in every trial depending on side
         """
 
     def start(self):
@@ -115,19 +115,19 @@ class HeadFixationTeaching(TaskBase):
             ),
         }
 
-        # Side cues, built once per session (calibrated white noise, one side)
+        # Stimuli, built once per session (calibrated white noise, one side)
         cal = self.calibrations.sound_calibration
-        self.cue = {
+        self.stimulus = {
             "left": whitenoise_generator(
-                duration=SIDE_SOUND_DURATION,
+                duration=STIMULUS_DURATION,
                 gain=cal.get_sound_gain(
-                    speaker=0, dB=SIDE_SOUND_DB, sound_name="whitenoise"
+                    speaker=0, dB=STIMULUS_DB, sound_name="whitenoise"
                 ),
             ),
             "right": whitenoise_generator(
-                duration=SIDE_SOUND_DURATION,
+                duration=STIMULUS_DURATION,
                 gain=cal.get_sound_gain(
-                    speaker=1, dB=SIDE_SOUND_DB, sound_name="whitenoise"
+                    speaker=1, dB=STIMULUS_DB, sound_name="whitenoise"
                 ),
             ),
         }
@@ -150,6 +150,7 @@ class HeadFixationTeaching(TaskBase):
         self.state_weight = "Normal"
         self.scale_weight = 0.0
         self.switch_log = []  # (timestamp, "on" / "off")
+        self.switch_log_saved = 0  # switch_log entries already registered
         self.weight_log = []  # (timestamp, weight in g)
         self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
@@ -179,12 +180,12 @@ class HeadFixationTeaching(TaskBase):
             self.add_release_states()
             return
 
-        # Load this trial's side cue now, before the trial runs; play_stim only
+        # Load this trial's stimulus now, before the trial runs; play_stim only
         # sends the play softcode.
         if self.side == "left":
-            sound_device.load(left=self.cue["left"], right=None)
+            sound_device.load(left=self.stimulus["left"], right=None)
         else:
-            sound_device.load(left=None, right=self.cue["right"])
+            sound_device.load(left=None, right=self.stimulus["right"])
 
         # Ways out of a fixation, valid in every state while the head is fixed.
         release = {
@@ -215,10 +216,11 @@ class HeadFixationTeaching(TaskBase):
                 output_actions=[],
             )
 
-        # Start global time, play the side cue. 
+        # Start global time, play the stimulus; "choice" (GO LED) starts when
+        # it ends.
         self.bpod.add_state(
             state_name="play_stim",
-            state_timer=SIDE_SOUND_DURATION,
+            state_timer=STIMULUS_DURATION,
             state_change_conditions={BpodEvent.Tup: "choice", **release},
             output_actions=[PLAY_SOFTCODE, BpodOutput.GlobalTimer1Trig],
         )
@@ -229,7 +231,7 @@ class HeadFixationTeaching(TaskBase):
             state_name="choice",
             state_timer=0,
             state_change_conditions={port_in: "water", **release},
-            output_actions=GO_LEDS,
+            output_actions=GO_LED,
         )
 
         # Still fixed after the water: the trial ends here and the next one
@@ -305,6 +307,11 @@ class HeadFixationTeaching(TaskBase):
         )
         self.register_value("time_up_count", self.time_up_count)
         self.register_value("number_of_switches", self.number_of_switches)
+
+        # Switch changes since the previous trial, for the session plot
+        new_changes = self.switch_log[self.switch_log_saved :]
+        self.switch_log_saved += len(new_changes)
+        self.register_value("switch_changes", new_changes)
 
     def close(self):
         # BLANK: make sure the magnet is off at the end, even if the session was

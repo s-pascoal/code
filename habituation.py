@@ -26,6 +26,7 @@ Softcodes (direct_functions):
         self.state_weight = "Normal"
         self.scale_weight = 0.0
         self.switch_log = []  # (timestamp, "on" / "off")
+        self.switch_log_saved = 0  # switch_log entries already registered
         self.weight_log = []  # (timestamp, weight in g)
         self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
 
@@ -52,6 +53,11 @@ Softcodes (direct_functions):
 
     def after_trial(self):
         self.register_value("water", 0)
+
+        # Switch changes since the previous trial, for the session plot
+        new_changes = self.switch_log[self.switch_log_saved :]
+        self.switch_log_saved += len(new_changes)
+        self.register_value("switch_changes", new_changes)
 
     def close(self):
         pass
