@@ -11,6 +11,7 @@ from village.custom_classes.session_plot_base import SessionPlotBase
 GO_ONSET = 0.5  # s after stimulus onset (STIMULUS_DURATION in the tasks)
 OUTCOME_COLORS = {"correct": "tab:green", "incorrect": "tab:red", "miss": "tab:gray"}
 SWITCH_Y = {"off": 0, "on": 1}  # as in online_plot.py
+WATER_STATES = ["STATE_deliver_water_START", "STATE_water_START"]  # valve states
 
 
 def timestamps(cell) -> list[float]:
@@ -77,7 +78,8 @@ class SessionPlot(SessionPlotBase):
     the first trial started), the bottom two a trial axis:
 
     1) Licks: every lick as a dot, one row for the left port and one for the
-       right one. Does the animal prefer one port?
+       right one, and a row with every water delivery. Does the animal prefer
+       one port? Which licks earned water?
     2) Switch: headport switch on / off, as in the online plot. When does the
        animal enter the headport, and for how long?
     3) Response latency per trial: stimulus onset -> first lick, coloured by
@@ -146,26 +148,38 @@ class SessionPlot(SessionPlotBase):
         t_end = max(valid_ends + valid_starts) - t0
 
         # ==================================================
-        # PANEL 1: LICKS (one row per port)
+        # PANEL 1: LICKS (one row per port) + WATER
         # ==================================================
         rows = []
-        for column, label in (("Port1In", "L"), ("Port2In", "R")):
+        for column, label, color in (
+            ("Port1In", "L", "tab:blue"),
+            ("Port2In", "R", "tab:orange"),
+        ):
             if column in df.columns:
                 licks = [t - t0 for cell in df[column] for t in timestamps(cell)]
-                rows.append((label, licks))
+                rows.append((label, licks, color, "."))
+        # Water: start of the valve state ("deliver_water" in LickHeadportTeaching,
+        # "water" in HeadFixationTeaching)
+        water = [
+            t - t0
+            for column in WATER_STATES
+            if column in df.columns
+            for cell in df[column]
+            for t in timestamps(cell)
+        ]
+        if water:
+            rows.append(("Water", water, "tab:green", "v"))
         if rows:
-            for y, ((_, licks), color) in enumerate(
-                zip(rows, ["tab:blue", "tab:orange"], strict=False)
-            ):
+            for y, (_, times, color, marker) in enumerate(rows):
                 ax_licks.plot(
-                    licks, [y] * len(licks), ".", markersize=4, color=color
+                    times, [y] * len(times), marker, markersize=4, color=color
                 )
-            ax_licks.set_yticks(list(range(len(rows))), [label for label, _ in rows])
+            ax_licks.set_yticks(list(range(len(rows))), [r[0] for r in rows])
             ax_licks.set_ylim(-0.6, len(rows) - 0.4)
         else:
             unavailable(ax_licks, "Licking data unavailable")
         ax_licks.set_ylabel("Licks")
-        ax_licks.set_title("Licks (left / right port)")
+        ax_licks.set_title("Licks (left / right port) and water")
 
         # ==================================================
         # PANEL 2: SWITCH ON / OFF

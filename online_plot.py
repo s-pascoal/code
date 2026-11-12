@@ -11,15 +11,17 @@ STATE_Y = {"Jumping": 0, "Normal": 1, "Heavy": 2}
 
 
 class OnlinePlot(OnlinePlotBase):
-    """Live view of the switch and the box scale, against the time since the
-    task started (x axis, growing):
+    """Live view of the switch, the box scale and the lickport, against the
+    time since the task started (x axis, growing):
 
-    - top: the switch, off or on;
-    - middle: every reading of the scale, in grams (points);
-    - bottom: the weight state, Jumping, Normal or Heavy.
+    - the switch, off or on;
+    - every reading of the scale, in grams (points);
+    - the weight state, Jumping, Normal or Heavy;
+    - the lickport position (motor 1 angle, higher = closer).
 
-    The data are collected by gpio_trigger.py and scale_trigger.py in the task
-    (switch_log, weight_log, state_log). The trials can be long, so the plot is
+    The data are collected in the task by gpio_trigger.py and scale_trigger.py
+    (switch_log, weight_log, state_log) and by the lickport functions of
+    direct_functions.py (lickport_log). The trials can be long, so the plot is
     redrawn every refresh_period seconds, not only when a trial finishes.
     """
 
@@ -28,9 +30,10 @@ class OnlinePlot(OnlinePlotBase):
         self.refresh_period = 1  # seconds between redraws
 
     def create_figure_and_axes(self) -> None:
-        self.fig, (self.ax_switch, self.ax_weight, self.ax_state) = plt.subplots(
-            3, 1, figsize=(10, 7), sharex=True
-        )
+        (
+            self.fig,
+            (self.ax_switch, self.ax_weight, self.ax_state, self.ax_lickport),
+        ) = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
 
         (self.switch_line,) = self.ax_switch.plot([], [], drawstyle="steps-post")
         self.ax_switch.set_ylim(-0.1, 1.1)
@@ -44,7 +47,12 @@ class OnlinePlot(OnlinePlotBase):
         self.ax_state.set_ylim(-0.2, 2.2)
         self.ax_state.set_yticks(list(STATE_Y.values()), list(STATE_Y))
         self.ax_state.set_ylabel("Weight state")
-        self.ax_state.set_xlabel("Time since the task started (s)")
+
+        (self.lickport_line,) = self.ax_lickport.plot(
+            [], [], drawstyle="steps-post", marker="."
+        )
+        self.ax_lickport.set_ylabel("Lickport (°)\nhigher = closer")
+        self.ax_lickport.set_xlabel("Time since the task started (s)")
 
         self.fig.tight_layout()
 
@@ -62,6 +70,7 @@ class OnlinePlot(OnlinePlotBase):
         switch_log = [(t - start, SWITCH_Y[v]) for t, v in list(task.switch_log)]
         weight_log = [(t - start, w) for t, w in list(task.weight_log)]
         state_log = [(t - start, STATE_Y[v]) for t, v in list(task.state_log)]
+        lickport_log = [(t - start, a) for t, a in list(task.lickport_log)]
 
         # The switch starts off and the weight state Normal (see start())
         self.switch_line.set_data(
@@ -80,7 +89,13 @@ class OnlinePlot(OnlinePlotBase):
         else:
             self.weight_points.set_data([], [])
 
-        self.ax_state.set_xlim(0, max(now, 10))  # shared by the 3 axes
+        # Lickport: unknown until the first move of the session (trial 1)
+        self.lickport_line.set_data(*self.steps(lickport_log, now))
+        if lickport_log:
+            angles = [a for _, a in lickport_log]
+            self.ax_lickport.set_ylim(min(angles) - 5, max(angles) + 5)
+
+        self.ax_lickport.set_xlim(0, max(now, 10))  # shared by the 4 axes
 
     @staticmethod
     def steps(

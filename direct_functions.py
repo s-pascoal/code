@@ -2,6 +2,7 @@ from sound_functions import cue_generator, sound_device, whitenoise_generator
 
 from village.custom_classes.direct_functions_base import DirectFunctionsBase
 from village.devices.chip import motor_box1
+from village.scripts.time_utils import time_utils
 
 
 class DirectFunctions(DirectFunctionsBase):
@@ -73,11 +74,19 @@ class DirectFunctions(DirectFunctionsBase):
     def function9(self):
         """Move motor to the current lickport_distance (last value from the previous
         session at trial 1, or the newly stepped value mid-session)."""
-        motor_box1.move(round(self.task.settings.lickport_distance))
+        self._move_lickport(round(self.task.settings.lickport_distance))
 
     def function10(self):
         """Move motor to the initial position."""
-        motor_box1.move(round(self.task.settings.lickport_start_distance))
+        self._move_lickport(round(self.task.settings.lickport_start_distance))
+
+    def _move_lickport(self, angle):
+        # Move, and log (time, angle) for the online plot. lickport_log is
+        # defined in the tasks' start(); a task without it is just not logged.
+        motor_box1.move(angle)
+        lickport_log = getattr(self.task, "lickport_log", None)
+        if lickport_log is not None:
+            lickport_log.append((time_utils.now_timestamp(), angle))
 
     # The head clamp is an electromagnet board, not a servo, so there are no
     # clamp functions here. BLANK: how the board is controlled.

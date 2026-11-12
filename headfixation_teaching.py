@@ -153,6 +153,7 @@ class HeadFixationTeaching(TaskBase):
         self.switch_log_saved = 0  # switch_log entries already registered
         self.weight_log = []  # (timestamp, weight in g)
         self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
+        self.lickport_log = []  # (timestamp, motor 1 angle), direct_functions.py
 
     def create_trial(self):
         # Rewarded side starts always left, switches every 3 trials
