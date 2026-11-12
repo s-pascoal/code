@@ -35,16 +35,17 @@ stimulus (white noise, 0.5 s, from the rewarded side) followed by the GO cue
 (LED, on until the response). Mice must lick the rewarded port to get water;
 licks count from GO onset.
 Wrong licks are ignored (correction is okay, no punishment), but they restart
-the 90 s no-lick timeout. A timeout has no cue or punishment.
+the 90 s no-lick timeout.
 
 After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
 
 When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage (HeadFixationTeaching).
 
 Softcodes (direct_functions):
-5 = play loaded sound (stimulus)
-- The trial sound is built once per side in start (calibrated), and loaded in
-  every trial depending on side
+5 = play loaded stimulus
+- Sound load comes directly from sound_functions, calibrated in start, and loaded in every trial depending on side
+9 = move lickport motor to last position (towards headport)
+- last position is stored in settings.lickport_distance, and updated after every trial in after_trial
 
 """
 

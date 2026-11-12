@@ -45,8 +45,8 @@ class TrainingProtocol(TrainingProtocolBase):
         # Task-dependent settings (persist across sessions)
         self.settings.water_volume = 5
         # Initial lickport distance from headport for the first session
-        self.settings.lickport_start_distance = 200.0  # BLANK: confirm
-        self.settings.lickport_distance = 200.0  # BLANK: confirm (= start)
+        self.settings.lickport_start_distance = 100.0  # BLANK: confirm
+        self.settings.lickport_distance = 100.0  # BLANK: confirm (= start)
 
         # HeadFixationTeaching (persist across sessions)
         self.settings.fixation_duration = 1  # s; +2 per 20 time-ups, -2 per session
