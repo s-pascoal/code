@@ -27,7 +27,7 @@ Left and right ports alternate in blocks of 3 trials. Each trial starts with a
 side cue (broadband noise, 400 ms, from the rewarded side) followed by a GO cue
 (LED). Mice must lick the rewarded port to get water.
 Wrong licks are ignored (correction is okay, no punishment), but they restart
-the 30 s no-lick timeout.
+the 90 s no-lick timeout.
 
 After 20 rewarded trials, lickport retracts 3mm, until it reached 14mm.
 
@@ -36,6 +36,8 @@ When at 14mm, if the animal gets >30 switch triggers, it moves to the next stage
 Softcodes (direct_functions):
 5 = play loaded cue
 - Sound load comes directly from sound_functions, calibrated in start, and loaded in every trial depending on side
+9 = move lickport motor to last position (towards headport)
+- last position is stored in settings.lickport_distance, and updated after every trial in after_trial
 
 """
 
