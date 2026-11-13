@@ -62,15 +62,24 @@ class OnlinePlot(OnlinePlotBase):
 
         task = manager.task
         # The lists keep timestamps: the x axis is the seconds since the task
-        # started (start_timestamp, set in the task's start()).
-        start = task.start_timestamp
+        # started (start_timestamp, set in the task's start()). Nothing to draw
+        # before start() has run.
+        start = getattr(task, "start_timestamp", None)
+        if start is None:
+            return
         now = time_utils.now_timestamp() - start
-        # Copies, as the triggers keep appending from their own threads
+
+        def logged(name: str) -> list:
+            # A copy, as the triggers keep appending from their own threads.
+            # Empty if the task doesn't define it: village hides errors in the
+            # online plot, so a missing list must not stop the whole plot.
+            return list(getattr(task, name, []))
+
         # (seconds, height) for the step lines: each text becomes its height
-        switch_log = [(t - start, SWITCH_Y[v]) for t, v in list(task.switch_log)]
-        weight_log = [(t - start, w) for t, w in list(task.weight_log)]
-        state_log = [(t - start, STATE_Y[v]) for t, v in list(task.state_log)]
-        lickport_log = [(t - start, a) for t, a in list(task.lickport_log)]
+        switch_log = [(t - start, SWITCH_Y[v]) for t, v in logged("switch_log")]
+        weight_log = [(t - start, w) for t, w in logged("weight_log")]
+        state_log = [(t - start, STATE_Y[v]) for t, v in logged("state_log")]
+        lickport_log = [(t - start, a) for t, a in logged("lickport_log")]
 
         # The switch starts off and the weight state Normal (see start())
         self.switch_line.set_data(

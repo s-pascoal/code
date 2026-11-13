@@ -1,10 +1,7 @@
 from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
-from village.scripts.log import log
 from village.scripts.time_utils import time_utils
 from sound_functions import sound_device, whitenoise_generator
 import math
-
-import pandas as pd
 
 # Lickport variables
 START_ANGLE = 100.0    # motor 1 angle closest to the headport; 
@@ -12,7 +9,6 @@ STEP_ANGLE = 21.0      # PLACEHOLDER: degrees that equal 3 mm - 1mm = 7 degrees,
 FINAL_ANGLE = 50.0     # PLACEHOLDER: degrees that equal 14 mm from the headport
 CORRECT_TO_STEP = 20   # how many correct licks 1st attempt to retract lickport
 NO_LICK_TIMEOUT = 90   # after how many seconds no lick the motor retracts to previous stage
-INACTIVITY_RESET = 12 * 3600  # s without licks (or entries) -> lickport back to start
 
 # Stimulus: white noise from the rewarded side
 STIMULUS_DURATION = 0.5  # BLANK: 0.4 s?
@@ -23,32 +19,6 @@ GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
-
-
-def last_lick_timestamp(subject_path: str) -> float | None:
-    """Time of the subject's last lick in its previous sessions (Port1In /
-    Port2In in its subject CSV, all sessions), or None if there is none."""
-    try:
-        df = pd.read_csv(
-            subject_path,
-            sep=";",
-            usecols=lambda name: name in ("Port1In", "Port2In"),
-            low_memory=False,
-        )
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        return None
-    last = None
-    for column in df.columns:
-        # Each cell is a list of times, read from the CSV as "[t1, t2, ...]"
-        for cell in df[column].dropna().astype(str):
-            for value in cell.strip("[]").split(","):
-                try:
-                    t = float(value)
-                except ValueError:
-                    continue
-                if not math.isnan(t) and (last is None or t > last):
-                    last = t
-    return last
 
 
 class LickHeadportTeaching(TaskBase):
@@ -77,28 +47,9 @@ Softcodes (direct_functions):
 9 = move lickport motor to last position (towards headport)
 - last position is stored in settings.lickport_distance, and updated after every trial in after_trial
 
-If the animal has not licked for 12 h (it did not enter the box, or entered
-without licking), the session starts with the lickport back at its start
-position (lickport_start_distance).
-
 """
 
     def start(self):
-        # No licks for 12 h (no entries, or entries without licking): start
-        # again from the start position. Trial 1 moves the motor there.
-        last_lick = last_lick_timestamp(self.subject_path)
-        if (
-            last_lick is not None
-            and time_utils.now_timestamp() - last_lick > INACTIVITY_RESET
-        ):
-            log.info(
-                "No licks for 12 h: lickport back to its start position",
-                subject=self.subject,
-            )
-            self.settings.lickport_distance = float(
-                self.settings.lickport_start_distance
-            )
-
         self.valve_time = {
             "left": self.calibrations.water_calibration.get_valve_time(
                 port=1, volume=self.settings.water_volume
