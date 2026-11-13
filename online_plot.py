@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from village.classes.null_classes import NullMotor
 from village.custom_classes.online_plot_base import OnlinePlotBase
+from village.devices.chip import motor_box1
 from village.scripts.time_utils import time_utils
 
 # Height in the plot of each value written by the triggers (gpio_trigger.py,
@@ -21,13 +23,20 @@ class OnlinePlot(OnlinePlotBase):
 
     The data are collected in the task by gpio_trigger.py and scale_trigger.py
     (switch_log, weight_log, state_log) and by the lickport functions of
-    direct_functions.py (lickport_log). The trials can be long, so the plot is
-    redrawn every refresh_period seconds, not only when a trial finishes.
+    direct_functions.py (lickport_log). The lickport also comes from motor 1
+    itself: its angle is read at every redraw, so moves made from the GUI
+    (MONITOR -> BOX -> MOTOR1) show too, while this window is open. The trials
+    can be long, so the plot is redrawn every refresh_period seconds, not only
+    when a trial finishes.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.refresh_period = 1  # seconds between redraws
+        # Motor 1 angle read at each redraw (timestamp, angle), for the task
+        # that started at motor_samples_start
+        self.motor_samples: list[tuple[float, int]] = []
+        self.motor_samples_start: float | None = None
 
     def create_figure_and_axes(self) -> None:
         (
@@ -81,6 +90,20 @@ class OnlinePlot(OnlinePlotBase):
         state_log = [(t - start, STATE_Y[v]) for t, v in logged("state_log")]
         lickport_log = [(t - start, a) for t, a in logged("lickport_log")]
 
+        # Motor 1 angle now: village updates it after every move, also the
+        # ones from the GUI. Kept only when it changes; restarted for a new
+        # task. Skipped if motor 1 is off (NullMotor, always 0).
+        if self.motor_samples_start != start:
+            self.motor_samples = []
+            self.motor_samples_start = start
+        if not isinstance(motor_box1, NullMotor):
+            angle = motor_box1.current_angle
+            if not self.motor_samples or self.motor_samples[-1][1] != angle:
+                self.motor_samples.append((now + start, angle))
+        lickport = sorted(
+            lickport_log + [(t - start, a) for t, a in self.motor_samples]
+        )
+
         # The switch starts off and the weight state Normal (see start())
         self.switch_line.set_data(
             *self.steps(switch_log, now, start_value=SWITCH_Y["off"])
@@ -98,10 +121,10 @@ class OnlinePlot(OnlinePlotBase):
         else:
             self.weight_points.set_data([], [])
 
-        # Lickport: unknown until the first move of the session (trial 1)
-        self.lickport_line.set_data(*self.steps(lickport_log, now))
-        if lickport_log:
-            angles = [a for _, a in lickport_log]
+        # Lickport: commanded moves (lickport_log) and motor readings
+        self.lickport_line.set_data(*self.steps(lickport, now))
+        if lickport:
+            angles = [a for _, a in lickport]
             self.ax_lickport.set_ylim(min(angles) - 5, max(angles) + 5)
 
         self.ax_lickport.set_xlim(0, max(now, 10))  # shared by the 4 axes

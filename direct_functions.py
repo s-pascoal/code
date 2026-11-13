@@ -66,10 +66,12 @@ class DirectFunctions(DirectFunctionsBase):
     def function7(self):
         """Retract lickport"""
         motor_box1.close()
+        self._log_lickport(motor_box1.close_angle)
 
     def function8(self):
         """Advance lickport"""
         motor_box1.open()
+        self._log_lickport(motor_box1.open_angle)
 
     def function9(self):
         """Move motor to the current lickport_distance (last value from the previous
@@ -81,9 +83,12 @@ class DirectFunctions(DirectFunctionsBase):
         self._move_lickport(round(self.task.settings.lickport_start_distance))
 
     def _move_lickport(self, angle):
-        # Move, and log (time, angle) for the online plot. lickport_log is
-        # defined in the tasks' start(); a task without it is just not logged.
         motor_box1.move(angle)
+        self._log_lickport(angle)
+
+    def _log_lickport(self, angle):
+        # Log (time, angle) for the online plot. lickport_log is defined in the
+        # tasks' start(); a task without it is just not logged.
         lickport_log = getattr(self.task, "lickport_log", None)
         if lickport_log is not None:
             lickport_log.append((time_utils.now_timestamp(), angle))
