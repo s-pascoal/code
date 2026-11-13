@@ -88,6 +88,7 @@ Softcodes (direct_functions):
         self.switch_log_saved = 0  # switch_log entries already registered
         self.weight_log = []  # (timestamp, weight in g)
         self.state_log = []  # (timestamp, "Jumping" / "Normal" / "Heavy")
+        self.lickport_log = []  # (timestamp, motor 1 angle), direct_functions.py
 
     def create_trial(self):
         # Define the rewarded side for this trial, each 3 trials switch side.

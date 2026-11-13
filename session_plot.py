@@ -11,6 +11,8 @@ from village.custom_classes.session_plot_base import SessionPlotBase
 GO_ONSET = 0.5  # s after stimulus onset (STIMULUS_DURATION in the tasks)
 OUTCOME_COLORS = {"correct": "tab:green", "incorrect": "tab:red", "miss": "tab:gray"}
 SWITCH_Y = {"off": 0, "on": 1}  # as in online_plot.py
+WATER_STATES = ["STATE_deliver_water_START", "STATE_water_START"]  # valve states
+LICK_SIZE = 2.5  # lick marker size
 
 
 def timestamps(cell) -> list[float]:
@@ -77,7 +79,10 @@ class SessionPlot(SessionPlotBase):
     the first trial started), the bottom two a trial axis:
 
     1) Licks: every lick as a dot, one row for the left port and one for the
-       right one. Does the animal prefer one port?
+       right one, with a gray line at each trial onset. Filled: the lick came
+       at or after its trial's water (the rewarded lick and the drinking);
+       open: before it (wrong side, during the stimulus) or in a trial without
+       water. Does the animal prefer one port? When does it make mistakes?
     2) Switch: headport switch on / off, as in the online plot. When does the
        animal enter the headport, and for how long?
     3) Response latency per trial: stimulus onset -> first lick, coloured by
@@ -146,26 +151,72 @@ class SessionPlot(SessionPlotBase):
         t_end = max(valid_ends + valid_starts) - t0
 
         # ==================================================
-        # PANEL 1: LICKS (one row per port)
+        # PANEL 1: LICKS (one row per port), TRIAL ONSETS AND WATER
         # ==================================================
+        # Water onset of each trial (start of the valve state), nan if none
+        water_onset = [
+            next(
+                (
+                    first_timestamp(df[column].iloc[i])
+                    for column in WATER_STATES
+                    if column in df.columns
+                    and not math.isnan(first_timestamp(df[column].iloc[i]))
+                ),
+                math.nan,
+            )
+            for i in range(n_trials)
+        ]
         rows = []
-        for column, label in (("Port1In", "L"), ("Port2In", "R")):
+        for column, label, color in (
+            ("Port1In", "L", "tab:blue"),
+            ("Port2In", "R", "tab:orange"),
+        ):
             if column in df.columns:
-                licks = [t - t0 for cell in df[column] for t in timestamps(cell)]
-                rows.append((label, licks))
+                # Filled: at or after the water of its trial (the rewarded lick
+                # and the drinking). Open: before it, or in a trial without water.
+                filled, open_ = [], []
+                for cell, water in zip(df[column], water_onset, strict=False):
+                    for t in timestamps(cell):
+                        (filled if t >= water else open_).append(t - t0)
+                rows.append((label, filled, open_, color))
         if rows:
-            for y, ((_, licks), color) in enumerate(
-                zip(rows, ["tab:blue", "tab:orange"], strict=False)
-            ):
+            # Trial onsets: a gray line across both rows
+            for start in trial_starts:
                 ax_licks.plot(
-                    licks, [y] * len(licks), ".", markersize=4, color=color
+                    [start - t0] * 2,
+                    [-0.35, len(rows) - 0.65],
+                    color="gray",
+                    linewidth=0.6,
+                    alpha=0.6,
                 )
-            ax_licks.set_yticks(list(range(len(rows))), [label for label, _ in rows])
+            for y, (_, filled, open_, color) in enumerate(rows):
+                for times, face in ((filled, color), (open_, "white")):
+                    ax_licks.plot(
+                        times,
+                        [y] * len(times),
+                        "o",
+                        markersize=LICK_SIZE,
+                        markeredgewidth=0.8,
+                        color=color,
+                        markerfacecolor=face,
+                    )
+            ax_licks.set_yticks(list(range(len(rows))), [r[0] for r in rows])
             ax_licks.set_ylim(-0.6, len(rows) - 0.4)
+            # Legend outside the panel
+            ax_licks.plot([], [], color="gray", linewidth=0.6, label="trial onset")
+            ax_licks.plot([], [], "o", color="gray", label="from water on")
+            ax_licks.plot(
+                [], [], "o", color="gray", markerfacecolor="white", label="no water yet"
+            )
+            ax_licks.legend(
+                loc="upper left", bbox_to_anchor=(1.01, 1), fontsize="small"
+            )
         else:
             unavailable(ax_licks, "Licking data unavailable")
         ax_licks.set_ylabel("Licks")
-        ax_licks.set_title("Licks (left / right port)")
+        ax_licks.set_title(
+            "Licks (filled = from the water on, open = before / no water)"
+        )
 
         # ==================================================
         # PANEL 2: SWITCH ON / OFF

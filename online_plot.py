@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from village.classes.null_classes import NullMotor
 from village.custom_classes.online_plot_base import OnlinePlotBase
+from village.devices.chip import motor_box1
 from village.scripts.time_utils import time_utils
 
 # Height in the plot of each value written by the triggers (gpio_trigger.py,
@@ -11,26 +13,36 @@ STATE_Y = {"Jumping": 0, "Normal": 1, "Heavy": 2}
 
 
 class OnlinePlot(OnlinePlotBase):
-    """Live view of the switch and the box scale, against the time since the
-    task started (x axis, growing):
+    """Live view of the switch, the box scale and the lickport, against the
+    time since the task started (x axis, growing):
 
-    - top: the switch, off or on;
-    - middle: every reading of the scale, in grams (points);
-    - bottom: the weight state, Jumping, Normal or Heavy.
+    - the switch, off or on;
+    - every reading of the scale, in grams (points);
+    - the weight state, Jumping, Normal or Heavy;
+    - the lickport position (motor 1 angle, higher = closer).
 
-    The data are collected by gpio_trigger.py and scale_trigger.py in the task
-    (switch_log, weight_log, state_log). The trials can be long, so the plot is
-    redrawn every refresh_period seconds, not only when a trial finishes.
+    The data are collected in the task by gpio_trigger.py and scale_trigger.py
+    (switch_log, weight_log, state_log) and by the lickport functions of
+    direct_functions.py (lickport_log). The lickport also comes from motor 1
+    itself: its angle is read at every redraw, so moves made from the GUI
+    (MONITOR -> BOX -> MOTOR1) show too, while this window is open. The trials
+    can be long, so the plot is redrawn every refresh_period seconds, not only
+    when a trial finishes.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.refresh_period = 1  # seconds between redraws
+        # Motor 1 angle read at each redraw (timestamp, angle), for the task
+        # that started at motor_samples_start
+        self.motor_samples: list[tuple[float, int]] = []
+        self.motor_samples_start: float | None = None
 
     def create_figure_and_axes(self) -> None:
-        self.fig, (self.ax_switch, self.ax_weight, self.ax_state) = plt.subplots(
-            3, 1, figsize=(10, 7), sharex=True
-        )
+        (
+            self.fig,
+            (self.ax_switch, self.ax_weight, self.ax_state, self.ax_lickport),
+        ) = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
 
         (self.switch_line,) = self.ax_switch.plot([], [], drawstyle="steps-post")
         self.ax_switch.set_ylim(-0.1, 1.1)
@@ -44,7 +56,12 @@ class OnlinePlot(OnlinePlotBase):
         self.ax_state.set_ylim(-0.2, 2.2)
         self.ax_state.set_yticks(list(STATE_Y.values()), list(STATE_Y))
         self.ax_state.set_ylabel("Weight state")
-        self.ax_state.set_xlabel("Time since the task started (s)")
+
+        (self.lickport_line,) = self.ax_lickport.plot(
+            [], [], drawstyle="steps-post", marker="."
+        )
+        self.ax_lickport.set_ylabel("Lickport (°)\nhigher = closer")
+        self.ax_lickport.set_xlabel("Time since the task started (s)")
 
         self.fig.tight_layout()
 
@@ -54,14 +71,38 @@ class OnlinePlot(OnlinePlotBase):
 
         task = manager.task
         # The lists keep timestamps: the x axis is the seconds since the task
-        # started (start_timestamp, set in the task's start()).
-        start = task.start_timestamp
+        # started (start_timestamp, set in the task's start()). Nothing to draw
+        # before start() has run.
+        start = getattr(task, "start_timestamp", None)
+        if start is None:
+            return
         now = time_utils.now_timestamp() - start
-        # Copies, as the triggers keep appending from their own threads
+
+        def logged(name: str) -> list:
+            # A copy, as the triggers keep appending from their own threads.
+            # Empty if the task doesn't define it: village hides errors in the
+            # online plot, so a missing list must not stop the whole plot.
+            return list(getattr(task, name, []))
+
         # (seconds, height) for the step lines: each text becomes its height
-        switch_log = [(t - start, SWITCH_Y[v]) for t, v in list(task.switch_log)]
-        weight_log = [(t - start, w) for t, w in list(task.weight_log)]
-        state_log = [(t - start, STATE_Y[v]) for t, v in list(task.state_log)]
+        switch_log = [(t - start, SWITCH_Y[v]) for t, v in logged("switch_log")]
+        weight_log = [(t - start, w) for t, w in logged("weight_log")]
+        state_log = [(t - start, STATE_Y[v]) for t, v in logged("state_log")]
+        lickport_log = [(t - start, a) for t, a in logged("lickport_log")]
+
+        # Motor 1 angle now: village updates it after every move, also the
+        # ones from the GUI. Kept only when it changes; restarted for a new
+        # task. Skipped if motor 1 is off (NullMotor, always 0).
+        if self.motor_samples_start != start:
+            self.motor_samples = []
+            self.motor_samples_start = start
+        if not isinstance(motor_box1, NullMotor):
+            angle = motor_box1.current_angle
+            if not self.motor_samples or self.motor_samples[-1][1] != angle:
+                self.motor_samples.append((now + start, angle))
+        lickport = sorted(
+            lickport_log + [(t - start, a) for t, a in self.motor_samples]
+        )
 
         # The switch starts off and the weight state Normal (see start())
         self.switch_line.set_data(
@@ -80,7 +121,13 @@ class OnlinePlot(OnlinePlotBase):
         else:
             self.weight_points.set_data([], [])
 
-        self.ax_state.set_xlim(0, max(now, 10))  # shared by the 3 axes
+        # Lickport: commanded moves (lickport_log) and motor readings
+        self.lickport_line.set_data(*self.steps(lickport, now))
+        if lickport:
+            angles = [a for _, a in lickport]
+            self.ax_lickport.set_ylim(min(angles) - 5, max(angles) + 5)
+
+        self.ax_lickport.set_xlim(0, max(now, 10))  # shared by the 4 axes
 
     @staticmethod
     def steps(
