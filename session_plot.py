@@ -206,7 +206,7 @@ class SessionPlot(SessionPlotBase):
             ax_licks.plot([], [], color="gray", linewidth=0.6, label="trial onset")
             ax_licks.plot([], [], "o", color="gray", label="from water on")
             ax_licks.plot(
-                [], [], "o", color="gray", markerfacecolor="white", label="no water yet"
+                [], [], "o", color="gray", markerfacecolor="white", label="no water"
             )
             ax_licks.legend(
                 loc="upper left", bbox_to_anchor=(1.01, 1), fontsize="small"
@@ -214,9 +214,7 @@ class SessionPlot(SessionPlotBase):
         else:
             unavailable(ax_licks, "Licking data unavailable")
         ax_licks.set_ylabel("Licks")
-        ax_licks.set_title(
-            "Licks (filled = from the water on, open = before / no water)"
-        )
+        ax_licks.set_title("Licks")
 
         # ==================================================
         # PANEL 2: SWITCH ON / OFF
