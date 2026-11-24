@@ -1,4 +1,11 @@
+from headfixation_teaching import FINAL_FIXATION
+from lick_headport_teaching import FINAL_ANGLE
+
 from village.custom_classes.training_protocol_base import TrainingProtocolBase
+
+SWITCHES_TO_HEAD_FIXATION = 30  # head entries in one session needed for stage 3
+TASK_TRAINING = None  # BLANK: name of the task after pre-training
+
 
 class TrainingProtocol(TrainingProtocolBase):
     """
@@ -31,7 +38,6 @@ class TrainingProtocol(TrainingProtocolBase):
     When the task ends, the values of the variables are updated in the json file,
     following the logic in the update method."""
 
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -50,6 +56,7 @@ class TrainingProtocol(TrainingProtocolBase):
 
         # HeadFixationTeaching (persist across sessions)
         self.settings.fixation_duration = 1  # s; +2 per 20 time-ups, -2 per session
+        self.settings.magnet_power = 40  # % electromagnet holding power (max 40)
 
     def update_training_settings(self) -> None:
         if self.last_task == "Habituation":
@@ -71,10 +78,24 @@ class TrainingProtocol(TrainingProtocolBase):
             self.settings.minimum_duration = 25 * 60
             self.settings.maximum_duration = 45 * 60
 
+            # Stage 3 once the lickport reached 14 mm (FINAL_ANGLE) and the
+            # mouse pressed the headbar switches > 30 times in the last session
+            last_session = df_lht[df_lht["session"] == df_lht["session"].max()]
+            switches = last_session["number_of_switches"].max()
+            if (
+                self.settings.lickport_distance <= FINAL_ANGLE
+                and switches > SWITCHES_TO_HEAD_FIXATION
+            ):
+                self.settings.next_task = "HeadFixationTeaching"
 
-        # TODO: once lickport_distance >= 14 and >30 switch triggers,
-        # self.settings.next_task = "HeadFixationTeaching"
-
+        elif self.last_task == "HeadFixationTeaching":
+            # fixation_duration was already updated by the task (it persists)
+            self.settings.next_task = "HeadFixationTeaching"
+            if (
+                self.settings.fixation_duration > FINAL_FIXATION
+                and TASK_TRAINING is not None
+            ):
+                self.settings.next_task = TASK_TRAINING
 
     def define_gui_tabs(self) -> None:
         pass
