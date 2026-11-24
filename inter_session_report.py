@@ -70,9 +70,10 @@ def unavailable(ax, text: str) -> None:
     ax.text(0.5, 0.5, text, ha="center", va="center", transform=ax.transAxes)
 
 
-class SubjectPlot(SubjectPlotBase):
-    """Progress of one subject across sessions. x axis: session number, with
-    the day under it (D1 = first day) and a faint line where a new day starts.
+class InterSessionReport(SubjectPlotBase):
+    """Inter-session report: progress of one subject across sessions. x axis:
+    session number, with the day under it (D1 = first day) and a faint line
+    where a new day starts.
 
     1) Stage: which pre-training task each session was.
     2) Lickport distance (motor 1 angle, higher = closer) at the start and end
@@ -86,6 +87,7 @@ class SubjectPlot(SubjectPlotBase):
 
     def __init__(self) -> None:
         super().__init__()
+        self.name = "Inter-session report"
 
     def create_plot(
         self,
@@ -100,7 +102,7 @@ class SubjectPlot(SubjectPlotBase):
         subject = (
             str(df["subject"].iloc[0]) if "subject" in df.columns and len(df) else ""
         )
-        fig.suptitle(subject)
+        fig.suptitle(f"Inter-session report: {subject}")
 
         if "session" not in df.columns or not len(df):
             for ax in axes:

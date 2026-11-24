@@ -2,15 +2,13 @@ import math
 
 from sound_functions import whitenoise_generator
 
-from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase, TaskError
+from village.custom_classes.task_base import BpodEvent, BpodOutput, TaskBase
 from village.devices.sound_device import sound_device
 from village.scripts.time_utils import time_utils
 
-# Head clamp: an electromagnet board drives the pistons. Fail-safe: with no
-# power the magnet lets go and the animal is free.
-CLAMP_TRAVEL_TIME = None  # BLANK: seconds the pistons need to go down/up
-RELEASE_OUTPUT = None  # BLANK: Bpod output that cuts the magnet?
-# If the Bpod fails, the board's own microprocessor ends the fixation. BLANK: confirm
+# Head clamp: the electromagnet of the head-fixed board, switched by the Pi
+# (direct functions 11/12). Off = a spring releases the headbar.
+MAGNET_KICK_TIME = 0.2  # s: the board's kick that pulls the headbar in
 
 # Fixation duration
 START_FIXATION = 1  # first fixation duration (same as default_training_settings)
@@ -29,22 +27,24 @@ STRUGGLE_SOFTCODE = BpodEvent.SoftCode2  # scale_trigger.py "Heavy"; BLANK: veri
 
 # Softcodes, Bpod -> Raspberry Pi (direct_functions.py)
 PLAY_SOFTCODE = BpodOutput.SoftCode5  # function5: play loaded sound
+MAGNET_DOWN_SOFTCODE = BpodOutput.SoftCode11  # function11: magnet on (magnet_power)
+MAGNET_UP_SOFTCODE = BpodOutput.SoftCode12  # function12: magnet off
 
 # GO cue: LED on until the response. Both outputs, so it works on either port
 GO_LED = [(BpodOutput.PWM1, 255), (BpodOutput.PWM2, 255)]
 
 
 class HeadFixationTeaching(TaskBase):
-    """Stage 3 of pre-training 
+    """Stage 3 of pre-training
 
     One Bpod trial = at most one reward, like LickHeadportTeaching. A fixation
     lasts several trials: the head stays fixed between them and the fixation
     time is tracked in Python (self.fixed, self.fixation_start).
 
     First trial of a fixation:
-        wait_head_entry --SoftCode1 (head entry event)--> fix (the headbar
-        switches turn the magnet on, BLANK: to confirm; the fixation time
-        starts once the pistons are down)
+        wait_head_entry --SoftCode1 (head entry event)--> fix (SoftCode11:
+        the Pi switches the magnet on; the fixation time starts after the
+        board's 200 ms kick)
         -> play_stim (stimulus) -> choice (GO cue) -> water -> exit
     Next trials, while still fixed:
         play_stim -> choice -> water -> exit
@@ -52,13 +52,24 @@ class HeadFixationTeaching(TaskBase):
     start() and loaded into the sound device in create_trial, before the
     trial runs; the Bpod only sends the play softcode.
     In every trial, Global Timer 1 is set to the time left in the fixation:
-    when it ends -> time_up_release; a struggle -> self_release. Both cut the
-    magnet (RELEASE_OUTPUT) and end the fixation.
+    when it ends -> time_up_release; a struggle -> self_release. Both switch
+    the magnet off (SoftCode12) and end the fixation. A new fixation needs a
+    new press of the switches (a new SoftCode1), so a mouse that keeps its
+    headbar on them after a release is not fixed again.
+
+    The magnet is also switched off in close() and by TaskBase at the end of
+    every session, so a session cut off mid-fixation releases the mouse.
 
     Precision: the fixation clock keeps running in the short gaps between
     trials (after_trial + create_trial + sending the next state machine, a few
     tens of ms), and licks in those gaps are not detected. So a fixation can
-    last slightly longer than fixation_duration. 
+    last slightly longer than fixation_duration.
+
+    Board limit: the firmware never keeps the magnet on more than 10 minutes,
+    and an off-on less than 5 s apart does not restart that count. If a mouse
+    re-enters within 5 s again and again, the board switches the magnet off
+    after 10 min in total and refuses to switch it on for 30 s (TIMEOUT and
+    ERR LOCKOUT in the events log); this task would not notice.
     """
 
     def __init__(self):
@@ -68,7 +79,7 @@ class HeadFixationTeaching(TaskBase):
         Head-Fixation Teaching Task
         ----------------------------------------------------------------
         The mouse presses its headbar against the two switches (-> SoftCode1)
-        and the electromagnet fixes its head. While fixed: stimulus (white
+        and the electromagnet of the head-fixed board fixes its head. While fixed: stimulus (white
         noise from the rewarded side), then GO cue (LED, on until the
         response), then a lick on the rewarded port gives water. Left and right alternate every 3 trials.
         Wrong licks are ignored (correction is okay, no punishment).
@@ -82,6 +93,7 @@ class HeadFixationTeaching(TaskBase):
 
         Softcodes (direct_functions):
         5 = play loaded sound (stimulus)
+        11 = magnet down (power = magnet_power), 12 = magnet up
         - The trial sound is built once per side in start (calibrated), and
           loaded in every trial depending on side
         """
@@ -94,17 +106,9 @@ class HeadFixationTeaching(TaskBase):
         - self.settings.water_volume: reward volume per correct lick
         - self.settings.fixation_duration: seconds the head stays fixed
           (starts at 1, +2 s every 20 time-ups, -2 s at each session start)
+        - self.settings.magnet_power: electromagnet holding power in %
+          (read by direct_functions.function11)
         """
-
-        blanks = {
-            "CLAMP_TRAVEL_TIME": CLAMP_TRAVEL_TIME,
-            "RELEASE_OUTPUT": RELEASE_OUTPUT,
-        }
-        missing = [name for name, value in blanks.items() if value is None]
-        if missing:
-            raise TaskError(
-                "HeadFixationTeaching draft: fill in " + ", ".join(missing)
-            )
 
         self.valve_time = {
             "left": self.calibrations.water_calibration.get_valve_time(
@@ -140,7 +144,7 @@ class HeadFixationTeaching(TaskBase):
 
         # Session-only variables (reset every session)
         self.fixed = False  # True while the head is fixed (across trials)
-        self.fixation_start = 0.0  # Raspberry time the pistons were down
+        self.fixation_start = 0.0  # Raspberry time the magnet kick ended
         self.time_up_count = 0  # time-up releases since the last +2 s step
 
         # Used by gpio_trigger.py, scale_trigger.py and online_plot.py
@@ -196,7 +200,7 @@ class HeadFixationTeaching(TaskBase):
 
         # Global Timer 1 = time left in the fixation. Configured here, started
         # by GlobalTimer1Trig in "play_stim": right after "fix" (once the
-        # pistons are down) or as the first state of an ongoing fixation.
+        # magnet holds) or as the first state of an ongoing fixation.
         self.bpod.set_global_timer(timer_id=1, timer_duration=remaining)
 
         if not self.fixed:
@@ -208,13 +212,13 @@ class HeadFixationTeaching(TaskBase):
                 output_actions=[],
             )
 
-            # The headbar switches turn the magnet on by themselves (BLANK: to
-            # confirm), so nothing is sent: just wait for the pistons.
+            # The Pi switches the magnet on (function11); wait for the kick
+            # that pulls the headbar in.
             self.bpod.add_state(
                 state_name="fix",
-                state_timer=CLAMP_TRAVEL_TIME,
+                state_timer=MAGNET_KICK_TIME,
                 state_change_conditions={BpodEvent.Tup: "play_stim", **release},
-                output_actions=[],
+                output_actions=[MAGNET_DOWN_SOFTCODE],
             )
 
         # Start global time, play the stimulus; "choice" (GO LED) starts when
@@ -247,21 +251,21 @@ class HeadFixationTeaching(TaskBase):
         self.add_release_states()
 
     def add_release_states(self):
-        """Cut the magnet and give the pistons time to go up, then end the
-        trial."""
+        """Switch the magnet off (function12) and end the trial. No need to
+        wait for the spring: the next fixation needs a new head entry."""
 
         self.bpod.add_state(
             state_name="time_up_release",
-            state_timer=CLAMP_TRAVEL_TIME,
+            state_timer=0,
             state_change_conditions={BpodEvent.Tup: "exit"},
-            output_actions=[RELEASE_OUTPUT],
+            output_actions=[MAGNET_UP_SOFTCODE],
         )
 
         self.bpod.add_state(
             state_name="self_release",
-            state_timer=CLAMP_TRAVEL_TIME,
+            state_timer=0,
             state_change_conditions={BpodEvent.Tup: "exit"},
-            output_actions=[RELEASE_OUTPUT],
+            output_actions=[MAGNET_UP_SOFTCODE],
         )
 
     def after_trial(self):
@@ -277,8 +281,8 @@ class HeadFixationTeaching(TaskBase):
 
         rewarded = visited("water")
 
-        # A new fixation started in this trial: remember when the pistons were
-        # down (end of "fix"), the moment Global Timer 1 started.
+        # A new fixation started in this trial: remember when the magnet held
+        # the headbar (end of "fix"), the moment Global Timer 1 started.
         if visited("fix"):
             self.fixed = True
             self.fixation_start = self.trial_data["STATE_fix_END"][0]
@@ -315,12 +319,6 @@ class HeadFixationTeaching(TaskBase):
         self.register_value("switch_changes", new_changes)
 
     def close(self):
-        # BLANK: make sure the magnet is off at the end, even if the session was
-        # cut off mid-fixation (no release state ran).
-        pass
-
-
-# Still to add in training_protocol.py:
-# - update_training_settings: LickHeadportTeaching -> HeadFixationTeaching
-#   (lickport at FINAL_ANGLE and >30 switches), and HeadFixationTeaching ->
-#   BLANK task name when fixation_duration > FINAL_FIXATION.
+        # Release the mouse even if the session was cut off mid-fixation (no
+        # release state ran). TaskBase does it too after close(), as a backup.
+        self.head_fixed.magnet_off()
